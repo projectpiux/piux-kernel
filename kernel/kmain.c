@@ -207,8 +207,17 @@ void strcpy(char *dest, const char *src) {
 
 static void draw_boot_menu(int selected) {
     vga_clear();
-    vga_puts("Piux first boot\n\n");
-    vga_puts("Use the arrow keys to choose an option.\n\n");
+    
+    vga_puts("[ OK ] System correctly booted...\n\n");
+    vga_puts("Welcome to Piux!\n\n");
+    vga_puts("Piux is an open source UNIX-like kernel written from scratch,\n");
+    vga_puts("very lightweight and minimal.\n\n");
+    vga_puts("Currently, the project is experimental, incomplete, and unstable.\n");
+    vga_puts("Contribute on GitHub to improve and add features:\n");
+    vga_puts("https://github.com/projectpiux/piux-kernel\n\n");
+    vga_puts("Piux is distributed under the GNU GPLv3 license.\n\n");
+    vga_puts("-----------------------------\n");
+    vga_puts("Move with up/down arrow keys:\n\n");
     vga_puts(selected == 0 ? "> Install the system (TUI)\n" : "  Install the system (TUI)\n");
     vga_puts(selected == 1 ? "> Shell-only\n" : "  Shell-only\n");
     vga_puts(selected == 2 ? "> Shutdown\n" : "  Shutdown\n");

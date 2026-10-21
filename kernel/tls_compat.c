@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "io.h"
-#include "../third_party/bearssl/inc/bearssl.h"
 
 void *memcpy(void *destination, const void *source, size_t length) {
     uint8_t *out = (uint8_t *)destination;
@@ -98,9 +97,4 @@ long time(long *result) {
 
 void __stack_chk_fail(void) {
     for (;;) __asm__ __volatile__("cli; hlt");
-}
-
-br_prng_seeder br_prng_seeder_system(const char **name) {
-    if (name != NULL) *name = "none";
-    return NULL;
 }

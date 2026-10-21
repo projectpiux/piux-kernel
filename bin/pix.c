@@ -218,7 +218,7 @@ void cmd_pix(const char *param, vga_puts_t vga_puts, vga_putc_t vga_putc) {
 
         if (elf_bytes <= 0) {
             if (elf_bytes < -1000) {
-                vga_puts("HTTPS failed, BearSSL error ");
+                vga_puts("HTTPS/TLS failed, error ");
                 print_u32((uint32_t)(-elf_bytes - 1000), vga_putc);
                 vga_putc('\n');
             } else {

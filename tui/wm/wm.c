@@ -446,3 +446,9 @@ int pwm_run(pwm_clear_t clear, pwm_puts_t puts, pwm_putc_t putc) {
     if (clear) clear();
     return 1;
 }
+
+int pwm_command_refresh(void) {
+    if (!pwm_running) return 0;
+    draw_desktop();
+    return 1;
+}

@@ -13,5 +13,6 @@ int pwm_command_clear(void);
 int pwm_command_is_active(void);
 int pwm_command_reload(void);
 int pwm_command_stop(void);
+int pwm_command_refresh(void);
 
 #endif

@@ -12,8 +12,6 @@ LDFLAGS  := -T linker.ld -m elf_i386 -nostdlib
 BUILD_DIR := build
 KERNEL    := $(BUILD_DIR)/kernel.elf
 ISO       := piux.iso
-BEARSSL   := third_party/bearssl/build/libbearssl.a
-TLS_ANCHORS := $(BUILD_DIR)/kernel/tls_anchors.c
 DISK      := $(BUILD_DIR)/ext2.img
 PWM_INFO  := $(BUILD_DIR)/pwm-info.o
 CURSOR_RAW := $(BUILD_DIR)/cursor.rgba
@@ -24,7 +22,6 @@ KERNEL_ASM_OBJS := $(BUILD_DIR)/kernel/syscall_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/gdt_flush.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/interrupt_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/context.o
-KERNEL_OBJS += $(BUILD_DIR)/kernel/tls_anchors.o
 BIN_OBJS    := $(patsubst bin/%.c,$(BUILD_DIR)/bin/%.o,$(wildcard bin/*.c))
 TUI_OBJS    := $(patsubst tui/installer/%.c,$(BUILD_DIR)/tui/installer/%.o,$(wildcard tui/installer/*.c))
 WM_OBJS     := $(patsubst tui/wm/%.c,$(BUILD_DIR)/tui/wm/%.o,$(wildcard tui/wm/*.c))
@@ -43,34 +40,6 @@ $(BUILD_DIR)/bootx.o: boot/bootx.asm
 $(BUILD_DIR)/kernel/%.o: kernel/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
-
-$(BUILD_DIR)/kernel/tls_anchors.o: $(TLS_ANCHORS)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I third_party/bearssl/inc -c -o $@ $<
-
-$(TLS_ANCHORS): $(BEARSSL)
-	@mkdir -p $(dir $@)
-	printf '#include <bearssl.h>\n' > $@
-	third_party/bearssl/build/brssl-host ta -q \
-	  /etc/ssl/certs/GTS_Root_R1.pem \
-	  /etc/ssl/certs/DigiCert_Global_Root_G2.pem \
-	  /etc/ssl/certs/ISRG_Root_X1.pem | sed 's/static const br_x509_trust_anchor/const br_x509_trust_anchor/' >> $@
-
-$(BEARSSL):
-	@if [ ! -x third_party/bearssl/build/brssl-host ]; then \
-	  $(MAKE) -C third_party/bearssl clean; \
-	  $(MAKE) -C third_party/bearssl build/brssl; \
-	  cp third_party/bearssl/build/brssl third_party/bearssl/build/brssl-host; \
-	fi
-	$(MAKE) -C third_party/bearssl clean
-	$(MAKE) -C third_party/bearssl CC='$(CC) -m32' AR=ar RANLIB=ranlib \
-	  CFLAGS='-m32 -std=gnu11 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -nostdlib -Iinc' \
-	  build/libbearssl.a
-	ar d third_party/bearssl/build/libbearssl.a sysrng.o
-
-FORCE:
-
-$(BEARSSL): FORCE
 
 $(BUILD_DIR)/kernel/%.o: kernel/%.asm
 	@mkdir -p $(dir $@)
@@ -112,7 +81,7 @@ $(BUILD_DIR)/logo-%.o: kernel/logo/ascii/%
 	  --rename-section .data=.rodata,alloc,load,readonly,data,contents $< $@
 
 $(KERNEL): $(OBJECTS) linker.ld
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(BEARSSL)
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
 $(ISO): $(KERNEL) grub.cfg
 	mkdir -p $(BUILD_DIR)/isodir/boot/grub
