@@ -1,3 +1,5 @@
+// this is the main .h header for the window manager of Piux
+
 #ifndef PIUX_WM_H
 #define PIUX_WM_H
 

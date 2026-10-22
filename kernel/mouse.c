@@ -5,6 +5,7 @@
 static int packet_length = 3;
 static uint8_t packet[4];
 static int packet_index;
+static int mouse_initialized;
 #define MOUSE_QUEUE_SIZE 32
 static mouse_event_t event_queue[MOUSE_QUEUE_SIZE];
 static volatile uint8_t queue_read;
@@ -41,6 +42,7 @@ static int read_aux_response(uint8_t *value) {
 void mouse_init(void) {
     uint8_t config;
     uint8_t response;
+    if (mouse_initialized) return;
     while (read_aux(&response)) {
     }
     wait_controller();
@@ -76,6 +78,7 @@ void mouse_init(void) {
     queue_write = 0;
     outb(0xa1, inb(0xa1) & (uint8_t)~0x10);
     outb(0x21, inb(0x21) & (uint8_t)~0x04);
+    mouse_initialized = 1;
 }
 
 void mouse_irq_handler(void) {

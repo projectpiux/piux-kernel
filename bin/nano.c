@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "../tui/wm/wm.h"
+#include "../user/desktop/desktop.h"
 #include "ext2.h"
-#include "commands.h"
 
 typedef void (*nano_puts_t)(const char *);
 typedef void (*nano_putc_t)(char);
@@ -88,7 +88,7 @@ void cmd_nano(const char *filename, nano_puts_t puts, nano_putc_t putc) {
     nano_render(puts, putc, length, exists ? "[loaded]" : "[new file]");
 
     for (;;) {
-        int key = pwm_command_read_char();
+        int key = desktop_is_active() ? desktop_read_char() : pwm_command_read_char();
         if (key == 0) continue;
 
         if (key == 19) {

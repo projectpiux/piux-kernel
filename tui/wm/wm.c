@@ -1,3 +1,5 @@
+// this is the main window manager of Piux
+
 #include <stdint.h>
 #include "wm.h"
 #include "keyboard.h"

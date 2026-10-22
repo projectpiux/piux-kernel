@@ -25,11 +25,15 @@ KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/context.o
 BIN_OBJS    := $(patsubst bin/%.c,$(BUILD_DIR)/bin/%.o,$(wildcard bin/*.c))
 TUI_OBJS    := $(patsubst tui/installer/%.c,$(BUILD_DIR)/tui/installer/%.o,$(wildcard tui/installer/*.c))
 WM_OBJS     := $(patsubst tui/wm/%.c,$(BUILD_DIR)/tui/wm/%.o,$(wildcard tui/wm/*.c))
+USER_DESKTOP_OBJS := $(patsubst user/desktop/%.c,$(BUILD_DIR)/user/desktop/%.o,$(wildcard user/desktop/*.c))
+USER_APP_SOURCES := $(wildcard user/apps/*.c) $(wildcard user/apps/*/*.c)
+USER_APP_OBJS := $(patsubst user/apps/%.c,$(BUILD_DIR)/user/apps/%.o,$(USER_APP_SOURCES))
+USER_OBJS := $(USER_DESKTOP_OBJS) $(USER_APP_OBJS)
 
 LOGOS      := $(wildcard kernel/logo/ascii/*/*)
 LOGO_OBJS  := $(patsubst kernel/logo/ascii/%,$(BUILD_DIR)/logo-%.o,$(LOGOS))
 
-OBJECTS := $(BUILD_DIR)/bootx.o $(KERNEL_OBJS) $(KERNEL_ASM_OBJS) $(BIN_OBJS) $(TUI_OBJS) $(WM_OBJS) $(LOGO_OBJS) $(BUILD_DIR)/os-infos.o $(PWM_INFO) $(CURSOR_OBJ)
+OBJECTS := $(BUILD_DIR)/bootx.o $(KERNEL_OBJS) $(KERNEL_ASM_OBJS) $(BIN_OBJS) $(TUI_OBJS) $(WM_OBJS) $(USER_OBJS) $(LOGO_OBJS) $(BUILD_DIR)/os-infos.o $(PWM_INFO) $(CURSOR_OBJ)
 
 all: $(ISO)
 
@@ -56,6 +60,14 @@ $(BUILD_DIR)/tui/installer/%.o: tui/installer/%.c
 $(BUILD_DIR)/tui/wm/%.o: tui/wm/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I kernel -I bin -I tui/wm -c -o $@ $<
+
+$(BUILD_DIR)/user/desktop/%.o: user/desktop/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I kernel -I bin -I user/desktop -I user/apps -c -o $@ $<
+
+$(BUILD_DIR)/user/apps/%.o: user/apps/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I kernel -I bin -I user/desktop -I user/apps -c -o $@ $<
 
 $(BUILD_DIR)/os-infos.o: etc/os-infos
 	@mkdir -p $(dir $@)

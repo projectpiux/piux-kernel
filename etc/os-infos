@@ -4,8 +4,8 @@
          X$XX&$$X++        Version: Rolling release 211026
         $$&.$$&            Bootloader: GRUB
          &&&$..:           GitHub: github.com/projectpiux/piux-kernel
-        ++x$&&..+          Developers: Anto
-       XX&&&&;..X          WM: pWM 1.1 (BETA!)
+        ++x$&&..+          WM: pwm 1.1
+       XX&&&&;..X          DE: pde 1.0.0 (BETA!)
       &&&&$$;..:&&      
       &&&x+:..:$&       
       &&X+...x&&          

@@ -17,6 +17,7 @@ void cmd_help(const char *param, vga_puts_t vga_puts, void (*vga_putc)(char)) {
     vga_puts("  nano   - Edit file\n");
     vga_puts("  numix  - Calculator app\n");
     vga_puts("  pwm    - Control the pWM window manager (also: pmw)\n");
+    vga_puts("  pde    - Control the pDE desktop (also: desktop)\n");
     vga_puts("  echo   - Print arguments\n");
     vga_puts("  shutdown - Shutdown in 60 seconds, or use 'shutdown now'\n");
     vga_puts("  reboot - Reboot immediately\n");

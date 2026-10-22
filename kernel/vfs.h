@@ -12,6 +12,8 @@
 #define VFS_FD_STDERR 2
 #define VFS_MAX_FDS 32
 
+typedef void (*vfs_console_putc_t)(char character);
+
 typedef enum {
     VFS_NODE_FILE,
     VFS_NODE_DIRECTORY,
@@ -26,5 +28,6 @@ int vfs_write(int fd, const void *buffer, uint32_t size);
 int vfs_close(int fd);
 int vfs_seek(int fd, uint32_t offset);
 vfs_node_type_t vfs_node_type(const char *path);
+vfs_console_putc_t vfs_set_console_output(vfs_console_putc_t putc);
 
 #endif

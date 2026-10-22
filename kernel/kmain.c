@@ -1,3 +1,5 @@
+// this is the main kernel of Piux
+
 #include <stdint.h>
 #include "io.h"
 #include "keyboard.h"
@@ -11,11 +13,13 @@
 #include "auth.h"
 #include "video.h"
 #include "system.h"
+#include "shell.h"
 #include "rtl8139.h"
 #include "dhcp.h"
 #include "../bin/commands.h"
 #include "../tui/installer/installer.h"
 #include "../tui/wm/wm.h"
+#include "../user/desktop/desktop.h"
 
 #define VGA_MEMORY 0xB8000
 #define VGA_WIDTH (video_framebuffer_ready ? video_columns : 80)
@@ -279,10 +283,62 @@ command_t* find_command(const char *name) {
     return 0;
 }
 
+int shell_execute_command_line(const char *line, void (*puts)(const char *), void (*putc)(char)) {
+    char command_line[80];
+    char command_name[80];
+    char parameter[80];
+    int length = 0;
+    int space_pos = -1;
+    while (line[length] && length < (int)sizeof(command_line) - 1) {
+        command_line[length] = line[length];
+        length++;
+    }
+    command_line[length] = '\0';
+    if (length == 0) return 0;
+    if (length > 5 && command_line[0] == 's' && command_line[1] == 'u' &&
+        command_line[2] == 'd' && command_line[3] == 'o' && command_line[4] == ' ') {
+        if (!auth_current_user_is_sudoer()) {
+            puts("Permission denied: user is not a sudoer.\n");
+            return -1;
+        }
+        for (int index = 0; index <= length - 5; index++)
+            command_line[index] = command_line[index + 5];
+        length -= 5;
+    }
+    for (int index = 0; index < length; index++)
+        if (command_line[index] == ' ') {
+            space_pos = index;
+            break;
+        }
+    if (space_pos > 0) {
+        for (int index = 0; index < space_pos; index++)
+            command_name[index] = command_line[index];
+        command_name[space_pos] = '\0';
+        int parameter_length = length - space_pos - 1;
+        for (int index = 0; index < parameter_length; index++)
+            parameter[index] = command_line[space_pos + index + 1];
+        parameter[parameter_length] = '\0';
+    } else {
+        for (int index = 0; index <= length; index++) command_name[index] = command_line[index];
+        parameter[0] = '\0';
+    }
+    {
+        command_t *command = find_command(command_name);
+        if (command) {
+            vfs_console_putc_t previous_output = vfs_set_console_output(putc);
+            command->handler(parameter, puts, putc);
+            vfs_set_console_output(previous_output);
+            return 1;
+        }
+    }
+    puts("Unknown command: ");
+    puts(command_name);
+    putc('\n');
+    return -1;
+}
+
 void shell(void) {
     char buffer[80];
-    char cmd_name[80];
-    char param[80];
     char history[16][80];
     int history_count = 0;
     int history_pos;
@@ -387,42 +443,56 @@ void shell(void) {
             strcpy(history[15], buffer);
         }
         
-        int space_pos = -1;
-        for (int i = 0; buffer[i]; i++) {
-            if (buffer[i] == ' ') {
-                space_pos = i;
-                break;
-            }
-        }
-        
-        if (space_pos > 0) {
-            for (int i = 0; i < space_pos; i++) {
-                cmd_name[i] = buffer[i];
-            }
-            cmd_name[space_pos] = '\0';
-            
-            int j = 0;
-            int start = space_pos + 1;
-            while (buffer[start + j]) {
-                param[j] = buffer[start + j];
-                j++;
-            }
-            param[j] = '\0';
-        } else {
-            strcpy(cmd_name, buffer);
-            param[0] = '\0';
-        }
-        
-        command_t *cmd = find_command(cmd_name);
+        shell_execute_command_line(buffer, vga_puts, vga_putc);
+    }
+}
 
-        if (cmd) {
-            cmd->handler(param, vga_puts, vga_putc);
-        } else {
-            vga_puts("Unknown command: ");
-            vga_puts(cmd_name);
-            vga_putc('\n');
+static int startup_word_is(const char *line, const char *word) {
+    int index = 0;
+    while (word[index] && line[index] == word[index]) index++;
+    return !word[index] && (line[index] == '\0' || line[index] == ' ' || line[index] == '\t');
+}
+
+// Runs the first command of the [STARTUP] block in /sbin/init (default: pde).
+static void run_startup(void) {
+    static char init[1024];
+    int length = ext2_is_mounted() ? ext2_read_file_by_path("/sbin/init", init, sizeof(init) - 1) : -1;
+    char command[128];
+    int in_startup = 0;
+    int position = 0;
+    command[0] = '\0';
+    if (length > 0) {
+        init[length] = '\0';
+        while (init[position] && !command[0]) {
+            char *line = &init[position];
+            int end = 0;
+            while (line[end] && line[end] != '\n') end++;
+            position += end + (line[end] ? 1 : 0);
+            line[end] = '\0';
+            if (end > 0 && line[end - 1] == '\r') line[--end] = '\0';
+            while (*line == ' ' || *line == '\t') line++;
+            if (!*line || *line == '#') continue;
+            if (*line == '[') {
+                in_startup = startup_word_is(line, "[STARTUP]");
+                continue;
+            }
+            if (in_startup) {
+                int i = 0;
+                while (line[i] && i < (int)sizeof(command) - 1) { command[i] = line[i]; i++; }
+                command[i] = '\0';
+            }
         }
     }
+    if (!command[0] && length <= 0) {
+        command[0] = 'p'; command[1] = 'd'; command[2] = 'e'; command[3] = '\0';
+    }
+    if (!command[0]) return;
+    if (startup_word_is(command, "pwm") || startup_word_is(command, "pmw"))
+        pwm_run(vga_clear, vga_puts, vga_putc);
+    else if (startup_word_is(command, "pde") || startup_word_is(command, "desktop"))
+        desktop_run();
+    else
+        shell_execute_command_line(command, vga_puts, vga_putc);
 }
 
 void kernel_main(uint32_t magic, uint32_t addr) {
@@ -452,6 +522,6 @@ void kernel_main(uint32_t magic, uint32_t addr) {
         auth_login(vga_clear, vga_puts, vga_putc);
     }
     
-    pwm_run(vga_clear, vga_puts, vga_putc);
+    run_startup();
     shell();
 }

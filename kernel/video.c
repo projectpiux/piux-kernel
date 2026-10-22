@@ -9,6 +9,8 @@
 int video_framebuffer_ready;
 int video_columns = 80;
 int video_rows = 25;
+int video_pixel_width;
+int video_pixel_height;
 static uint8_t *framebuffer;
 static uint32_t framebuffer_pitch;
 static uint8_t framebuffer_bpp;
@@ -26,6 +28,10 @@ static uint32_t video_origin_y;
 static uint8_t video_backbuffer[VIDEO_BACKBUFFER_WIDTH * VIDEO_BACKBUFFER_HEIGHT * 4];
 static uint32_t video_backbuffer_pitch;
 static int video_frame_active;
+static uint32_t video_frame_x;
+static uint32_t video_frame_y;
+static uint32_t video_frame_width;
+static uint32_t video_frame_height;
 
 static uint32_t framebuffer_color(uint32_t rgb) {
     if (framebuffer_bpp == 32) return rgb;
@@ -157,6 +163,8 @@ static uint32_t color_rgb(uint8_t color, int foreground) {
 
 void video_init(uint32_t magic, uint32_t multiboot_address) {
     video_framebuffer_ready = 0;
+    video_pixel_width = 0;
+    video_pixel_height = 0;
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) return;
     struct multiboot_info *info = (struct multiboot_info *)multiboot_address;
     if (!(info->flags & MULTIBOOT_INFO_FRAMEBUFFER) ||
@@ -176,6 +184,8 @@ void video_init(uint32_t magic, uint32_t multiboot_address) {
     blue_mask_size = info->color_info[5];
     framebuffer_width = info->framebuffer_width;
     framebuffer_height = info->framebuffer_height;
+    video_pixel_width = (int)framebuffer_width;
+    video_pixel_height = (int)framebuffer_height;
     video_origin_x = 0;
     video_origin_y = 0;
     video_columns = framebuffer_width / VIDEO_CELL_WIDTH;
@@ -204,6 +214,36 @@ int video_begin_frame(void) {
     for (uint32_t y = 0; y < framebuffer_height; y++)
         for (uint32_t byte = 0; byte < video_backbuffer_pitch; byte++)
             video_backbuffer[y * video_backbuffer_pitch + byte] = framebuffer[y * framebuffer_pitch + byte];
+    video_frame_x = 0;
+    video_frame_y = 0;
+    video_frame_width = framebuffer_width;
+    video_frame_height = framebuffer_height;
+    video_frame_active = 1;
+    return 1;
+}
+
+int video_begin_region_frame(int x, int y, int width, int height) {
+    int right = x + width;
+    int bottom = y + height;
+    if (!video_framebuffer_ready || framebuffer_width > VIDEO_BACKBUFFER_WIDTH ||
+        framebuffer_height > VIDEO_BACKBUFFER_HEIGHT || width <= 0 || height <= 0) return 0;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (right > (int)framebuffer_width) right = framebuffer_width;
+    if (bottom > (int)framebuffer_height) bottom = framebuffer_height;
+    if (right <= x || bottom <= y) return 0;
+    video_backbuffer_pitch = framebuffer_width * framebuffer_bytes_per_pixel;
+    video_frame_x = (uint32_t)x;
+    video_frame_y = (uint32_t)y;
+    video_frame_width = (uint32_t)(right - x);
+    video_frame_height = (uint32_t)(bottom - y);
+    for (uint32_t row = video_frame_y; row < video_frame_y + video_frame_height; row++) {
+        uint32_t offset = video_frame_x * framebuffer_bytes_per_pixel;
+        uint32_t bytes = video_frame_width * framebuffer_bytes_per_pixel;
+        for (uint32_t byte = 0; byte < bytes; byte++)
+            video_backbuffer[row * video_backbuffer_pitch + offset + byte] =
+                framebuffer[row * framebuffer_pitch + offset + byte];
+    }
     video_frame_active = 1;
     return 1;
 }
@@ -213,6 +253,18 @@ void video_present(void) {
     for (uint32_t y = 0; y < framebuffer_height; y++)
         for (uint32_t byte = 0; byte < video_backbuffer_pitch; byte++)
             framebuffer[y * framebuffer_pitch + byte] = video_backbuffer[y * video_backbuffer_pitch + byte];
+    video_frame_active = 0;
+}
+
+void video_present_region(void) {
+    if (!video_frame_active) return;
+    for (uint32_t row = video_frame_y; row < video_frame_y + video_frame_height; row++) {
+        uint32_t offset = video_frame_x * framebuffer_bytes_per_pixel;
+        uint32_t bytes = video_frame_width * framebuffer_bytes_per_pixel;
+        for (uint32_t byte = 0; byte < bytes; byte++)
+            framebuffer[row * framebuffer_pitch + offset + byte] =
+                video_backbuffer[row * video_backbuffer_pitch + offset + byte];
+    }
     video_frame_active = 0;
 }
 

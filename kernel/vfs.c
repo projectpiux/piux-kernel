@@ -29,6 +29,7 @@ extern int ramfs_write_file(const char *filename, const char *data, uint32_t siz
 extern int ramfs_find_file(const char *filename);
 
 static vfs_fd_t descriptors[VFS_MAX_FDS];
+static vfs_console_putc_t console_output;
 
 static int has_permission(const char *path, int flags) {
     uint16_t mode = 0644;
@@ -85,8 +86,17 @@ static int console_read(void *buffer, uint32_t size, uint32_t offset, uint32_t *
 static int console_write(const void *buffer, uint32_t size, uint32_t offset, uint32_t *done) {
     const char *bytes = buffer;
     (void)offset;
-    for (*done = 0; *done < size; (*done)++) vga_putc(bytes[*done]);
+    for (*done = 0; *done < size; (*done)++) {
+        if (console_output) console_output(bytes[*done]);
+        else vga_putc(bytes[*done]);
+    }
     return 0;
+}
+
+vfs_console_putc_t vfs_set_console_output(vfs_console_putc_t putc) {
+    vfs_console_putc_t previous = console_output;
+    console_output = putc;
+    return previous;
 }
 
 static int null_read(void *buffer, uint32_t size, uint32_t offset, uint32_t *done) {
@@ -141,6 +151,7 @@ static int is_directory(const char *path) {
 }
 
 int vfs_init(void) {
+    console_output = 0;
     for (int index = 0; index < VFS_MAX_FDS; index++) descriptors[index].used = 0;
     descriptors[VFS_FD_STDIN].used = 1;
     descriptors[VFS_FD_STDIN].flags = VFS_O_READ;

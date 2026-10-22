@@ -167,6 +167,7 @@ static int create_system_tree(void) {
     }
     if (write_config("/.config/system.conf", "root=/dev/hda\nfilesystem=ext2\ninit=/sbin/init\n") < 0) return -1;
     if (write_config("/.config/disk.conf", "device=/dev/hda\nfilesystem=ext2\nmountpoint=/\n") < 0) return -1;
+    if (write_config("/sbin/init", "# Piux init: a basic init file.\n# Use hashtags for comments or disabled commands.\n# Enjoy!\n\n[STARTUP]\npde\n# pwm\n\n") < 0) return -1;
     if (write_new_file("/etc/fstab", "/dev/hda / ext2 defaults 0 1\n") < 0) return -1;
     return 0;
 }

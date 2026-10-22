@@ -27,6 +27,7 @@ extern void cmd_run(const char *param, void (*vga_puts)(const char*), void (*vga
 extern void cmd_net(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_pix(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_numix(const char *, void (*)(const char *), void (*)(char));
+extern void cmd_desktop(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 
 static command_t commands[] = {
     { "help", cmd_help },
@@ -46,6 +47,8 @@ static command_t commands[] = {
     { "pmw", cmd_pwm },
     { "top", cmd_top },
     { "run", cmd_run },
+    { "pde", cmd_desktop },
+    { "desktop", cmd_desktop },
     { "net", cmd_net },
     { "pix", cmd_pix },
     { "numix", cmd_numix },
