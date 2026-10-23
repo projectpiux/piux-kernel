@@ -1,111 +1,114 @@
 .
 ├── banner.png
 ├── bin
-│   ├── about.c
-│   ├── cat.c
-│   ├── cd.c
-│   ├── clear.c
-│   ├── commands.h
-│   ├── echo.c
-│   ├── fs.c
-│   ├── help.c
-│   ├── ls.c
-│   ├── mkdir.c
-│   ├── nano.c
-│   ├── net.c
-│   ├── numix.c
-│   ├── pix.c
-│   ├── pwm.c
-│   ├── reboot.c
-│   ├── run.c
-│   ├── shutdown.c
-│   ├── top.c
-│   └── touch.c
+│   ├── about.c
+│   ├── cat.c
+│   ├── cd.c
+│   ├── clear.c
+│   ├── commands.h
+│   ├── desktop.c
+│   ├── echo.c
+│   ├── fs.c
+│   ├── help.c
+│   ├── ls.c
+│   ├── mkdir.c
+│   ├── nano.c
+│   ├── net.c
+│   ├── numix.c
+│   ├── pix.c
+│   ├── pwm.c
+│   ├── reboot.c
+│   ├── run.c
+│   ├── shutdown.c
+│   ├── top.c
+│   └── touch.c
 ├── boot
-│   └── bootx.asm
+│   └── bootx.asm
 ├── CONTRIBUTING.md
 ├── docs
-│   └── PWM-COMMANDS.md
+│   ├── INIT.md
+│   └── PWM-COMMANDS.md
 ├── etc
-│   ├── os-infos
-│   └── pwm-info
+│   ├── os-infos
+│   └── pwm-info
 ├── fast-all.sh
 ├── grub.cfg
 ├── kernel
-│   ├── arp.c
-│   ├── arp.h
-│   ├── ata.c
-│   ├── ata.h
-│   ├── auth.c
-│   ├── auth.h
-│   ├── context.asm
-│   ├── dhcp.c
-│   ├── dhcp.h
-│   ├── elf.c
-│   ├── elf.h
-│   ├── eth.c
-│   ├── eth.h
-│   ├── ext2.c
-│   ├── ext2.h
-│   ├── gdt.c
-│   ├── gdt_flush.asm
-│   ├── gdt.h
-│   ├── http.c
-│   ├── http.h
-│   ├── icmp.c
-│   ├── icmp.h
-│   ├── idt.c
-│   ├── interrupt_entry.asm
-│   ├── io.h
-│   ├── ip.c
-│   ├── ip.h
-│   ├── kernel_entry.asm
-│   ├── keyboard.c
-│   ├── keyboard.h
-│   ├── kmain.c
-│   ├── logo
-│   │   ├── ascii
-│   │   │   ├── 24x24
-│   │   │   │   └── piux
-│   │   │   ├── 48x48
-│   │   │   │   └── piux
-│   │   │   └── 96x96
-│   │   │       └── piux
-│   │   ├── cur
-│   │   │   └── arrow.png
-│   │   └── piux.png
-│   ├── memory.c
-│   ├── memory.h
-│   ├── mouse.c
-│   ├── mouse.h
-│   ├── net.c
-│   ├── net.h
-│   ├── pci.c
-│   ├── pci.h
-│   ├── process.c
-│   ├── process.h
-│   ├── ramfs.c
-│   ├── ramfs.h
-│   ├── rtl8139.c
-│   ├── rtl8139.h
-│   ├── syscall.c
-│   ├── syscall_entry.asm
-│   ├── syscall.h
-│   ├── system.c
-│   ├── system.h
-│   ├── tcp.c
-│   ├── tcp.h
-│   ├── timer.c
-│   ├── timer.h
-│   ├── tls.c
-│   ├── tls_compat.c
-│   ├── tls.h
-│   ├── udp.c
-│   ├── udp.h
-│   ├── vfs.c
-│   ├── vfs.h
-│   ├── video.c
-│   └── video.h
+│   ├── arp.c
+│   ├── arp.h
+│   ├── ata.c
+│   ├── ata.h
+│   ├── auth.c
+│   ├── auth.h
+│   ├── context.asm
+│   ├── dhcp.c
+│   ├── dhcp.h
+│   ├── elf.c
+│   ├── elf.h
+│   ├── eth.c
+│   ├── eth.h
+│   ├── ext2.c
+│   ├── ext2.h
+│   ├── gdt.c
+│   ├── gdt_flush.asm
+│   ├── gdt.h
+│   ├── http.c
+│   ├── http.h
+│   ├── icmp.c
+│   ├── icmp.h
+│   ├── idt.c
+│   ├── interrupt_entry.asm
+│   ├── io.h
+│   ├── ip.c
+│   ├── ip.h
+│   ├── kernel_entry.asm
+│   ├── keyboard.c
+│   ├── keyboard.h
+│   ├── kmain.c
+│   ├── logo
+│   │   ├── ascii
+│   │   │   ├── 24x24
+│   │   │   │   └── piux
+│   │   │   ├── 48x48
+│   │   │   │   └── piux
+│   │   │   └── 96x96
+│   │   │       └── piux
+│   │   ├── cur
+│   │   │   └── arrow.png
+│   │   └── piux.png
+│   ├── memory.c
+│   ├── memory.h
+│   ├── mouse.c
+│   ├── mouse.h
+│   ├── net.c
+│   ├── net.h
+│   ├── pci.c
+│   ├── pci.h
+│   ├── process.c
+│   ├── process.h
+│   ├── ramfs.c
+│   ├── ramfs.h
+│   ├── rtl8139.c
+│   ├── rtl8139.h
+│   ├── shell.h
+│   ├── syscall.c
+│   ├── syscall_entry.asm
+│   ├── syscall.h
+│   ├── system.c
+│   ├── system.h
+│   ├── tcp.c
+│   ├── tcp.h
+│   ├── timer.c
+│   ├── timer.h
+│   ├── tls.c
+│   ├── tls_compat.c
+│   ├── tls.h
+│   ├── udp.c
+│   ├── udp.h
+│   ├── vfs.c
+│   ├── vfs.h
+│   ├── video.c
+│   └── video.h
 ├── LICENSE
 ├── linker.ld
 ├── Makefile
@@ -114,12 +117,29 @@
 ├── THANK-YOU-CONTRIBUTORS.md
 ├── TREE.txt
 ├── tui
-│   ├── installer
-│   │   ├── installer.c
-│   │   └── installer.h
-│   └── wm
-│       ├── wm.c
-│       └── wm.h
+│   ├── installer
+│   │   ├── installer.c
+│   │   └── installer.h
+│   └── wm
+│       ├── wm.c
+│       └── wm.h
 └── user
+    ├── apps
+    │   ├── app.h
+    │   ├── systeminfo
+    │   │   ├── systeminfo.c
+    │   │   └── systeminfo.h
+    │   └── terminal
+    │       ├── terminal.c
+    │       └── terminal.h
+    ├── desktop
+    │   ├── app_registry.c
+    │   ├── app_registry.h
+    │   ├── desktop.c
+    │   ├── desktop.h
+    │   ├── launcher.c
+    │   ├── launcher.h
+    │   ├── taskbar.c
+    │   └── taskbar.h
     ├── hello.c
-    └── user.ldh
+    └── user.ld

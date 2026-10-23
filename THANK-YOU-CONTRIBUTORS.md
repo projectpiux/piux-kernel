@@ -11,6 +11,10 @@ Every contribution, big or small, helps Piux grow and improve.
 - [Matteo /hi-its-matte](https://github.com/hi-its-matte)
 - [Nugget /noxss-dev](https://github.com/noxss-dev)
 
+## Sponsored by
+
+- [Cisco93r on TikTok](https://tiktok.com/@cisco93r)
+
 ## A Note From the Maintainer
 
 Piux started as a small personal experiment.
