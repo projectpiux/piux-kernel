@@ -6,7 +6,7 @@
 
 **A small, Unix-like operating system for 32-bit x86, written from scratch.**
 
-![Version](https://img.shields.io/badge/version-0.6.5%20BETA-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-Rolling%20release-blue?style=flat-square)
 ![Arch](https://img.shields.io/badge/arch-i386-informational?style=flat-square)
 ![Boot](https://img.shields.io/badge/boot-GRUB%20Multiboot1-orange?style=flat-square)
 ![Language](https://img.shields.io/badge/lang-C%20%2B%20NASM-success?style=flat-square)
@@ -16,7 +16,7 @@
 [Quick Start](#-quick-start) •
 [Running](#-running) •
 [Interfaces](#-interfaces) •
-[Under the Hood](#-under-the-hood) •
+[Under the Hood](#-under-the-hood)
 [Community](#-community) •
 [Contributing](#-contributing)
 
@@ -49,6 +49,7 @@ It follows a rolling-release model with stable ISO snapshots, and every commit c
 | 🔐 **Accounts** | First-boot installer, login and hashed passwords |
 | 🌐 **Network** | RTL8139 driver and a minimal IP stack, with a built-in package manager |
 
+> [!WARNING]
 > Piux is a learning-oriented project. It is not meant to replace a mature operating system, and its security model is experimental.
 
 ---
@@ -56,14 +57,18 @@ It follows a rolling-release model with stable ISO snapshots, and every commit c
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/madebyanto/piux-kernel.git
+# 📥 Get the source
+git clone https://github.com/projectpiux/piux-kernel.git
 cd piux-kernel
+
+# 🚀 Build Piux and boot it in QEMU
 bash fast-all.sh
 ```
 
 `fast-all.sh` is an interactive TUI that builds Piux and boots it in QEMU. It can also create a fresh ext2 disk image or open an existing one. To clean previous build output:
 
 ```bash
+# 🧹 Remove all previous build output
 make clean
 ```
 
@@ -73,6 +78,7 @@ make clean
 <summary><b>Debian / Ubuntu</b></summary>
 
 ```bash
+# 📦 Toolchain · bootloader · ISO tools · emulator · ext2 utilities
 sudo apt-get install nasm gcc binutils grub-pc-bin xorriso qemu-system-x86 e2fsprogs
 ```
 </details>
@@ -81,6 +87,7 @@ sudo apt-get install nasm gcc binutils grub-pc-bin xorriso qemu-system-x86 e2fsp
 <summary><b>Fedora / RHEL</b></summary>
 
 ```bash
+# 📦 Toolchain · bootloader · ISO tools · emulator · ext2 utilities
 sudo dnf install nasm gcc binutils grub2-tools xorriso qemu-system-x86 e2fsprogs
 ```
 </details>
@@ -89,6 +96,7 @@ sudo dnf install nasm gcc binutils grub2-tools xorriso qemu-system-x86 e2fsprogs
 <summary><b>macOS (Homebrew)</b></summary>
 
 ```bash
+# 📦 Toolchain · bootloader · ISO tools · emulator · ext2 utilities
 brew install nasm gcc binutils grub xorriso qemu e2fsprogs
 ```
 </details>
@@ -103,6 +111,7 @@ brew install nasm gcc binutils grub xorriso qemu e2fsprogs
 | Firmware | BIOS / legacy boot with GRUB Multiboot1 |
 | Video | Multiboot framebuffer with a supported graphics mode |
 
+> [!NOTE]
 > These are the project's target minimums. The default QEMU setup uses more.
 
 ---
@@ -114,6 +123,7 @@ brew install nasm gcc binutils grub xorriso qemu e2fsprogs
 `fast-all.sh` boots Piux for you. To run an existing ISO manually (without a disk, Piux falls back to an in-memory filesystem):
 
 ```bash
+# 🖥️ Boot the ISO with a 1280x720 framebuffer and 512 MiB of RAM
 qemu-system-i386 \
   -cdrom piux.iso \
   -m 512M \
@@ -125,7 +135,8 @@ qemu-system-i386 \
 
 Piux is technically bootable on real x86 hardware, but this is **strongly discouraged**: it has not been tested on physical machines and is not mature enough yet. Use QEMU instead.
 
-> ⚠️ Booting on real hardware is at your own risk. If you still want to try, writing the ISO to a USB drive with `dd` **erases** the target device, so double-check the device path.
+> [!CAUTION]
+> Booting on real hardware is at your own risk. If you still want to try, writing the ISO to a USB drive with `dd` **erases** the target device, so double-check the device path.
 
 ---
 
@@ -134,7 +145,9 @@ Piux is technically bootable on real x86 hardware, but this is **strongly discou
 On first boot with a blank disk, a keyboard-driven **installer** sets up the filesystem and your account. After that, you log in and land in the default desktop.
 
 ```text
-Welcome to Piux!
+╭──────────────────────────────╮
+│        Welcome to Piux!      │
+╰──────────────────────────────╯
 
 user@piux> help
 ```
@@ -159,7 +172,9 @@ Piux ships with two user interfaces, both running on the same kernel and sharing
 **Boot.** BIOS hands over to GRUB, which loads the Piux kernel through Multiboot1 and passes along the framebuffer information. The kernel initializes its subsystems, mounts ext2 when a disk is available, runs the installer if needed, authenticates the user and starts the desktop.
 
 ```text
-BIOS ─▶ GRUB ─▶ Piux kernel ─▶ ext2 mount ─▶ installer / login ─▶ PDE / pWM
+┌──────┐   ┌──────┐   ┌──────────────┐   ┌─────────────┐   ┌───────────────────┐   ┌─────────────┐
+│ BIOS │ ─▶│ GRUB │ ─▶│ Piux kernel  │ ─▶│ ext2 mount  │ ─▶│ installer / login │ ─▶│  PDE / pWM  │
+└──────┘   └──────┘   └──────────────┘   └─────────────┘   └───────────────────┘   └─────────────┘
 ```
 
 **Filesystem.** Everything is exposed through a Unix-like VFS with file descriptors and device nodes such as `/dev/console` and `/dev/hda`. The ext2 driver is non-journaled and supports direct, single- and double-indirect blocks, file creation, reading, writing and deletion. Without a disk, Piux falls back to RAMFS.
@@ -188,11 +203,23 @@ BIOS ─▶ GRUB ─▶ Piux kernel ─▶ ext2 mount ─▶ installer / login �
 <details>
 <summary><b>Troubleshooting</b></summary>
 
-**GRUB not found** — install the rescue tools: `sudo apt-get install grub-pc-bin xorriso`
+**GRUB not found** — install the rescue tools:
 
-**QEMU won't start** — check `qemu-system-i386 --version` and install the QEMU x86 package if missing.
+```bash
+sudo apt-get install grub-pc-bin xorriso
+```
 
-**No framebuffer** — make sure QEMU provides a graphics mode, e.g. `-vga none -device VGA,xres=1280,yres=720`.
+**QEMU won't start** — check that it is installed and install the QEMU x86 package if missing:
+
+```bash
+qemu-system-i386 --version
+```
+
+**No framebuffer** — make sure QEMU provides a graphics mode, e.g.:
+
+```bash
+-vga none -device VGA,xres=1280,yres=720
+```
 
 **Keyboard not responding** — check that QEMU exposes a PS/2 keyboard.
 
@@ -217,6 +244,17 @@ Piux favors **small size, simplicity, direct hardware interaction and learning b
 ## 🤝 Contributing
 
 Contributions are welcome.
+
+```bash
+# 1️⃣ Fork the repository on GitHub, then create a branch
+git checkout -b feature/amazing-feature
+
+# 2️⃣ Commit your changes
+git commit -am "Add amazing feature"
+
+# 3️⃣ Push it, then open a Pull Request
+git push origin feature/amazing-feature
+```
 
 1. Fork the repository
 2. Create a branch: `git checkout -b feature/amazing-feature`
