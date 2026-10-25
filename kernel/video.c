@@ -1,44 +1,74 @@
 #include "video.h"
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
-#define MULTIBOOT_INFO_FRAMEBUFFER  (1u << 12)
+#define MULTIBOOT_INFO_FRAMEBUFFER (1u << 12)
 #define VGA_MEMORY 0xB8000
+#define VGA_COLUMNS 80
+#define VGA_ROWS 25
 #define VIDEO_BACKBUFFER_WIDTH 1920
 #define VIDEO_BACKBUFFER_HEIGHT 1080
+#define VIDEO_BACKBUFFER_BYTES (VIDEO_BACKBUFFER_WIDTH * VIDEO_BACKBUFFER_HEIGHT * 4)
+#define VIDEO_MAX_DRIVERS 8
+#define GLYPH_ROWS 7
+#define GLYPH_TOP ((VIDEO_CELL_HEIGHT - GLYPH_ROWS) / 2)
+
+#ifndef VIDEO_TEXT_SCROLL
+#define VIDEO_TEXT_SCROLL 1
+#endif
+
+#if defined(__i386__) || defined(__x86_64__)
+#define VIDEO_X86 1
+#else
+#define VIDEO_X86 0
+#endif
+
+typedef char video_cell_size_check[(VIDEO_CELL_WIDTH >= 6 && VIDEO_CELL_HEIGHT >= GLYPH_ROWS) ? 1 : -1];
+typedef uint32_t __attribute__((may_alias, aligned(1))) video_u32;
+typedef uint16_t __attribute__((may_alias, aligned(1))) video_u16;
 
 int video_framebuffer_ready;
 int video_columns = 80;
 int video_rows = 25;
 int video_pixel_width;
 int video_pixel_height;
-static uint8_t *framebuffer;
-static uint32_t framebuffer_pitch;
-static uint8_t framebuffer_bpp;
-static uint8_t framebuffer_bytes_per_pixel;
-static uint8_t red_position;
-static uint8_t red_mask_size;
-static uint8_t green_position;
-static uint8_t green_mask_size;
-static uint8_t blue_position;
-static uint8_t blue_mask_size;
-static uint32_t framebuffer_width;
-static uint32_t framebuffer_height;
+
+static struct {
+    uint8_t *base;
+    uint32_t pitch;
+    uint32_t width;
+    uint32_t height;
+    uint8_t bpp;
+    uint8_t bytes;
+    uint8_t rpos, rsize, gpos, gsize, bpos, bsize;
+    uint8_t xrgb;
+} fb;
+
+static uint8_t video_backbuffer[VIDEO_BACKBUFFER_BYTES] __attribute__((aligned(64)));
+static uint32_t shadow_pitch;
+static int shadow_ready;
+
 static uint32_t video_origin_x;
 static uint32_t video_origin_y;
-static uint8_t video_backbuffer[VIDEO_BACKBUFFER_WIDTH * VIDEO_BACKBUFFER_HEIGHT * 4];
-static uint32_t video_backbuffer_pitch;
+
 static int video_frame_active;
 static uint32_t video_frame_x;
 static uint32_t video_frame_y;
 static uint32_t video_frame_width;
 static uint32_t video_frame_height;
 
-static uint32_t framebuffer_color(uint32_t rgb) {
-    if (framebuffer_bpp == 32) return rgb;
-    return (((rgb >> 16) * ((1u << red_mask_size) - 1u) / 255u) << red_position) |
-           (((rgb >> 8) * ((1u << green_mask_size) - 1u) / 255u) << green_position) |
-           ((rgb * ((1u << blue_mask_size) - 1u) / 255u) << blue_position);
-}
+static int dirty_valid;
+static int dirty_x0, dirty_y0, dirty_x1, dirty_y1;
+
+static uint32_t palette_pixel[16];
+static uint8_t font[256][GLYPH_ROWS];
+static int font_ready;
+
+static struct video_gpu_info gpu_info;
+static int gpu_present;
+static const struct video_driver *registered_drivers[VIDEO_MAX_DRIVERS];
+static int registered_count;
+static const struct video_driver *active_driver;
+static int accel_pending;
 
 struct multiboot_info {
     uint32_t flags;
@@ -71,7 +101,162 @@ struct multiboot_info {
     uint8_t color_info[6];
 } __attribute__((packed));
 
-static uint8_t glyph_row(char character, int row) {
+#if VIDEO_X86
+static inline void port_outw(uint16_t port, uint16_t value) {
+    __asm__ volatile("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+static inline uint16_t port_inw(uint16_t port) {
+    uint16_t value;
+    __asm__ volatile("inw %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+static inline void port_outl(uint16_t port, uint32_t value) {
+    __asm__ volatile("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+static inline uint32_t port_inl(uint16_t port) {
+    uint32_t value;
+    __asm__ volatile("inl %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+#else
+static inline void port_outw(uint16_t port, uint16_t value) { (void)port; (void)value; }
+static inline uint16_t port_inw(uint16_t port) { (void)port; return 0xFFFF; }
+static inline void port_outl(uint16_t port, uint32_t value) { (void)port; (void)value; }
+static inline uint32_t port_inl(uint16_t port) { (void)port; return 0xFFFFFFFFu; }
+#endif
+
+static inline void mem_fill32(void *dst, uint32_t value, uint32_t count) {
+#if VIDEO_X86
+    uintptr_t n = count;
+    __asm__ volatile("cld\n\trep stosl" : "+D"(dst), "+c"(n) : "a"(value) : "memory", "cc");
+#else
+    uint32_t *d = (uint32_t *)dst;
+    while (count--) *d++ = value;
+#endif
+}
+
+static inline void mem_zero(void *dst, uint32_t bytes) {
+    uint8_t *d = (uint8_t *)dst;
+    uint32_t words = bytes >> 2;
+    mem_fill32(d, 0, words);
+    d += words << 2;
+    for (bytes &= 3u; bytes; bytes--) *d++ = 0;
+}
+
+static inline void mem_copy(void *dst, const void *src, uint32_t bytes) {
+#if VIDEO_X86
+    uintptr_t words = bytes >> 2;
+    uintptr_t tail = bytes & 3u;
+    __asm__ volatile("cld\n\trep movsl" : "+D"(dst), "+S"(src), "+c"(words) : : "memory", "cc");
+    __asm__ volatile("rep movsb" : "+D"(dst), "+S"(src), "+c"(tail) : : "memory", "cc");
+#else
+    uint8_t *d = (uint8_t *)dst;
+    const uint8_t *s = (const uint8_t *)src;
+    while (bytes--) *d++ = *s++;
+#endif
+}
+
+static void mem_move(void *dst, const void *src, uint32_t bytes) {
+    uint8_t *d = (uint8_t *)dst;
+    const uint8_t *s = (const uint8_t *)src;
+    if (d <= s || d >= s + bytes) {
+        mem_copy(d, s, bytes);
+        return;
+    }
+    d += bytes;
+    s += bytes;
+    while (bytes--) *--d = *--s;
+}
+
+static inline uint32_t pixel_read(const uint8_t *p, uint8_t bytes) {
+    if (bytes == 4) return *(const video_u32 *)p;
+    if (bytes == 3) return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
+    return *(const video_u16 *)p;
+}
+
+static inline void pixel_write(uint8_t *p, uint32_t value, uint8_t bytes) {
+    if (bytes == 4) {
+        *(video_u32 *)p = value;
+    } else if (bytes == 3) {
+        p[0] = (uint8_t)value;
+        p[1] = (uint8_t)(value >> 8);
+        p[2] = (uint8_t)(value >> 16);
+    } else {
+        *(video_u16 *)p = (uint16_t)value;
+    }
+}
+
+static void fill_pixels(uint8_t *dst, uint32_t value, uint32_t count, uint8_t bytes) {
+    if (count == 0) return;
+    if (value == 0) {
+        mem_zero(dst, count * bytes);
+    } else if (bytes == 4) {
+        mem_fill32(dst, value, count);
+    } else if (bytes == 2) {
+        uint16_t v = (uint16_t)value;
+        while (count && ((uintptr_t)dst & 3u)) {
+            *(video_u16 *)dst = v;
+            dst += 2;
+            count--;
+        }
+        mem_fill32(dst, (uint32_t)v | ((uint32_t)v << 16), count >> 1);
+        dst += (count >> 1) << 2;
+        if (count & 1u) *(video_u16 *)dst = v;
+    } else {
+        while (count--) {
+            pixel_write(dst, value, 3);
+            dst += 3;
+        }
+    }
+}
+
+static void write_pixels(uint8_t *dst, const uint32_t *src, uint32_t count, uint8_t bytes) {
+    if (bytes == 4) {
+        mem_copy(dst, src, count * 4u);
+        return;
+    }
+    while (count--) {
+        pixel_write(dst, *src++, bytes);
+        dst += bytes;
+    }
+}
+
+static inline uint32_t pack_channel(uint32_t c8, uint8_t pos, uint8_t size) {
+    uint32_t max;
+    if (!size) return 0;
+    if (size == 8) return c8 << pos;
+    max = (1u << size) - 1u;
+    return ((c8 * max + 127u) / 255u) << pos;
+}
+
+static inline uint32_t expand_channel(uint32_t value, uint8_t pos, uint8_t size) {
+    uint32_t max;
+    if (!size) return 0;
+    if (size == 8) return (value >> pos) & 0xFFu;
+    max = (1u << size) - 1u;
+    return (((value >> pos) & max) * 255u + (max >> 1)) / max;
+}
+
+static inline uint32_t framebuffer_color(uint32_t rgb) {
+    if (fb.xrgb) return rgb & 0x00FFFFFFu;
+    return pack_channel((rgb >> 16) & 0xFFu, fb.rpos, fb.rsize) |
+           pack_channel((rgb >> 8) & 0xFFu, fb.gpos, fb.gsize) |
+           pack_channel(rgb & 0xFFu, fb.bpos, fb.bsize);
+}
+
+static inline uint32_t mix8(uint32_t src, uint32_t dst, uint32_t alpha) {
+    uint32_t t = src * alpha + dst * (255u - alpha) + 128u;
+    return (t + (t >> 8)) >> 8;
+}
+
+static uint32_t blend_pixel(uint32_t raw_dst, uint32_t rgb, uint8_t alpha) {
+    uint32_t r = mix8((rgb >> 16) & 0xFFu, expand_channel(raw_dst, fb.rpos, fb.rsize), alpha);
+    uint32_t g = mix8((rgb >> 8) & 0xFFu, expand_channel(raw_dst, fb.gpos, fb.gsize), alpha);
+    uint32_t b = mix8(rgb & 0xFFu, expand_channel(raw_dst, fb.bpos, fb.bsize), alpha);
+    return pack_channel(r, fb.rpos, fb.rsize) | pack_channel(g, fb.gpos, fb.gsize) | pack_channel(b, fb.bpos, fb.bsize);
+}
+
+static uint8_t glyph_parse_row(char character, int row) {
     static const char *letters[] = {
         "01110 10001 10001 11111 10001 10001 10001", "11110 10001 10001 11110 10001 10001 11110",
         "01111 10000 10000 10000 10000 10000 01111", "11110 10001 10001 10001 10001 10001 11110",
@@ -145,235 +330,680 @@ static uint8_t glyph_row(char character, int row) {
     if (character == '{') pattern = "00010 00100 00100 01000 00100 00100 00010";
     if (character == '}') pattern = "01000 00100 00100 00010 00100 00100 01000";
     if (character == '~') pattern = "00000 01001 10110 00000 00000 00000 00000";
-    if (!pattern || row < 0 || row >= 7) return 0;
-    return (uint8_t)(pattern[row * 6] - '0') << 4 |
-           (uint8_t)(pattern[row * 6 + 1] - '0') << 3 |
-           (uint8_t)(pattern[row * 6 + 2] - '0') << 2 |
-           (uint8_t)(pattern[row * 6 + 3] - '0') << 1 |
-           (uint8_t)(pattern[row * 6 + 4] - '0');
+    if (!pattern || row < 0 || row >= GLYPH_ROWS) return 0;
+    return (uint8_t)((uint8_t)(pattern[row * 6] - '0') << 4 |
+                     (uint8_t)(pattern[row * 6 + 1] - '0') << 3 |
+                     (uint8_t)(pattern[row * 6 + 2] - '0') << 2 |
+                     (uint8_t)(pattern[row * 6 + 3] - '0') << 1 |
+                     (uint8_t)(pattern[row * 6 + 4] - '0'));
 }
 
-static uint32_t color_rgb(uint8_t color, int foreground) {
-    static const uint32_t palette[16] = {
-        0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
-        0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
-    };
-    return palette[foreground ? (color & 0x0F) : ((color >> 4) & 0x0F)];
+static void font_init(void) {
+    if (font_ready) return;
+    for (int c = 0; c < 256; c++)
+        for (int r = 0; r < GLYPH_ROWS; r++) font[c][r] = glyph_parse_row((char)c, r);
+    font_ready = 1;
+}
+
+static const uint32_t vga_palette[16] = {
+    0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
+    0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
+};
+
+
+static void get_clip(int *x0, int *y0, int *x1, int *y1) {
+    if (video_frame_active) {
+        *x0 = (int)video_frame_x;
+        *y0 = (int)video_frame_y;
+        *x1 = *x0 + (int)video_frame_width;
+        *y1 = *y0 + (int)video_frame_height;
+    } else {
+        *x0 = 0;
+        *y0 = 0;
+        *x1 = (int)fb.width;
+        *y1 = (int)fb.height;
+    }
+}
+
+static int clip_axis(int *a, int *b, int *len, int lo, int hi) {
+    int pa = *a, pb = *b, l = *len;
+    if (l <= 0) return 0;
+    if (pa < lo) {
+        int d = lo - pa;
+        if (d >= l) return 0;
+        pa += d;
+        pb += d;
+        l -= d;
+    }
+    if (pa >= hi) return 0;
+    if (l > hi - pa) l = hi - pa;
+    *a = pa;
+    *b = pb;
+    *len = l;
+    return 1;
+}
+
+static void dirty_add(int x0, int y0, int x1, int y1) {
+    if (!dirty_valid) {
+        dirty_x0 = x0; dirty_y0 = y0; dirty_x1 = x1; dirty_y1 = y1;
+        dirty_valid = 1;
+        return;
+    }
+    if (x0 < dirty_x0) dirty_x0 = x0;
+    if (y0 < dirty_y0) dirty_y0 = y0;
+    if (x1 > dirty_x1) dirty_x1 = x1;
+    if (y1 > dirty_y1) dirty_y1 = y1;
+}
+
+static inline void vram_sync(void) {
+    if (!accel_pending) return;
+    if (active_driver && active_driver->sync) active_driver->sync();
+    accel_pending = 0;
+}
+
+static inline uint8_t *surface_base(void) { return shadow_ready ? video_backbuffer : fb.base; }
+static inline uint32_t surface_pitch(void) { return shadow_ready ? shadow_pitch : fb.pitch; }
+
+static void flush_rect(int x0, int y0, int x1, int y1) {
+    uint32_t offset, bytes;
+    if (!shadow_ready || x1 <= x0 || y1 <= y0) return;
+    vram_sync();
+    offset = (uint32_t)x0 * fb.bytes;
+    bytes = (uint32_t)(x1 - x0) * fb.bytes;
+    if (offset == 0 && bytes == fb.pitch && bytes == shadow_pitch) {
+        mem_copy(fb.base + (uint32_t)y0 * fb.pitch, video_backbuffer + (uint32_t)y0 * shadow_pitch,
+                 bytes * (uint32_t)(y1 - y0));
+        return;
+    }
+    for (int y = y0; y < y1; y++)
+        mem_copy(fb.base + (uint32_t)y * fb.pitch + offset,
+                 video_backbuffer + (uint32_t)y * shadow_pitch + offset, bytes);
+}
+
+static void surface_commit(int x0, int y0, int x1, int y1) {
+    if (video_frame_active) dirty_add(x0, y0, x1, y1);
+    else flush_rect(x0, y0, x1, y1);
+}
+
+static inline int hw_fill(int x, int y, int w, int h, uint32_t pixel) {
+    if (active_driver && active_driver->fill_rect && active_driver->fill_rect(x, y, w, h, pixel)) {
+        accel_pending = 1;
+        return 1;
+    }
+    return 0;
+}
+
+static inline int hw_copy(int sx, int sy, int dx, int dy, int w, int h) {
+    if (active_driver && active_driver->copy_rect && active_driver->copy_rect(sx, sy, dx, dy, w, h)) {
+        accel_pending = 1;
+        return 1;
+    }
+    return 0;
+}
+
+static uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+    port_outl(0xCF8, 0x80000000u | ((uint32_t)bus << 16) | ((uint32_t)slot << 11) |
+                     ((uint32_t)func << 8) | (offset & 0xFCu));
+    return port_inl(0xCFC);
+}
+
+static int pci_find_display(struct video_gpu_info *out) {
+    if (!VIDEO_X86) return 0;
+    for (int bus = 0; bus < 256; bus++) {
+        for (int slot = 0; slot < 32; slot++) {
+            uint32_t id = pci_read32((uint8_t)bus, (uint8_t)slot, 0, 0x00);
+            uint32_t header;
+            int functions;
+            if ((id & 0xFFFFu) == 0xFFFFu) continue;
+            header = (pci_read32((uint8_t)bus, (uint8_t)slot, 0, 0x0C) >> 16) & 0xFFu;
+            functions = (header & 0x80u) ? 8 : 1;
+            for (int func = 0; func < functions; func++) {
+                uint32_t class_reg;
+                id = pci_read32((uint8_t)bus, (uint8_t)slot, (uint8_t)func, 0x00);
+                if ((id & 0xFFFFu) == 0xFFFFu) continue;
+                class_reg = pci_read32((uint8_t)bus, (uint8_t)slot, (uint8_t)func, 0x08);
+                if ((class_reg >> 24) != 0x03) continue;
+                out->bus = (uint8_t)bus;
+                out->slot = (uint8_t)slot;
+                out->func = (uint8_t)func;
+                out->class_code = (uint8_t)(class_reg >> 24);
+                out->subclass = (uint8_t)(class_reg >> 16);
+                out->vendor = (uint16_t)id;
+                out->device = (uint16_t)(id >> 16);
+                out->bar0 = pci_read32((uint8_t)bus, (uint8_t)slot, (uint8_t)func, 0x10);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+#define BGA_INDEX_PORT 0x01CE
+#define BGA_DATA_PORT 0x01CF
+#define BGA_REG_ID 0
+#define BGA_REG_XRES 1
+#define BGA_REG_YRES 2
+#define BGA_REG_BPP 3
+#define BGA_REG_ENABLE 4
+#define BGA_REG_VIRT_WIDTH 6
+#define BGA_REG_X_OFFSET 8
+#define BGA_REG_Y_OFFSET 9
+#define BGA_ENABLED 0x01
+#define BGA_LFB_ENABLED 0x40
+
+static uint16_t bga_read(uint16_t index) {
+    port_outw(BGA_INDEX_PORT, index);
+    return port_inw(BGA_DATA_PORT);
+}
+
+static void bga_write(uint16_t index, uint16_t value) {
+    port_outw(BGA_INDEX_PORT, index);
+    port_outw(BGA_DATA_PORT, value);
+}
+
+static int bga_probe(const struct video_gpu_info *gpu) {
+    uint16_t id;
+    if (!VIDEO_X86 || !gpu) return 0;
+    if (!((gpu->vendor == 0x1234 && gpu->device == 0x1111) ||
+          (gpu->vendor == 0x80EE && gpu->device == 0xBEEF))) return 0;
+    id = bga_read(BGA_REG_ID);
+    return id >= 0xB0C0 && id <= 0xB0CF;
+}
+
+static int bga_set_mode(uint32_t width, uint32_t height, uint8_t bpp, struct video_surface_info *out) {
+    uint16_t old_enable, old_x, old_y, old_bpp;
+    uint32_t base;
+    if (!gpu_present || (gpu_info.bar0 & 1u)) return 0;
+    base = gpu_info.bar0 & ~0xFu;
+    if (!base || width < 320 || height < 200 || width > 0xFFFF || height > 0xFFFF) return 0;
+    if (bpp != 15 && bpp != 16 && bpp != 24 && bpp != 32) return 0;
+
+    old_enable = bga_read(BGA_REG_ENABLE);
+    old_x = bga_read(BGA_REG_XRES);
+    old_y = bga_read(BGA_REG_YRES);
+    old_bpp = bga_read(BGA_REG_BPP);
+
+    bga_write(BGA_REG_ENABLE, 0);
+    bga_write(BGA_REG_XRES, (uint16_t)width);
+    bga_write(BGA_REG_YRES, (uint16_t)height);
+    bga_write(BGA_REG_BPP, bpp);
+    bga_write(BGA_REG_VIRT_WIDTH, (uint16_t)width);
+    bga_write(BGA_REG_X_OFFSET, 0);
+    bga_write(BGA_REG_Y_OFFSET, 0);
+    bga_write(BGA_REG_ENABLE, BGA_ENABLED | BGA_LFB_ENABLED);
+
+    if (bga_read(BGA_REG_XRES) != width || bga_read(BGA_REG_YRES) != height || bga_read(BGA_REG_BPP) != bpp) {
+        bga_write(BGA_REG_ENABLE, 0);
+        bga_write(BGA_REG_XRES, old_x);
+        bga_write(BGA_REG_YRES, old_y);
+        bga_write(BGA_REG_BPP, old_bpp);
+        bga_write(BGA_REG_VIRT_WIDTH, old_x);
+        bga_write(BGA_REG_ENABLE, old_enable);
+        return 0;
+    }
+    {
+        uint32_t virt = bga_read(BGA_REG_VIRT_WIDTH);
+        if (virt < width) virt = width;
+        out->base = (uint8_t *)(uintptr_t)base;
+        out->pitch = virt * ((bpp + 7u) >> 3);
+        out->width = width;
+        out->height = height;
+        out->bpp = bpp;
+        out->red_position = bpp == 16 ? 11 : bpp == 15 ? 10 : 16;
+        out->red_size = (bpp == 16 || bpp == 15) ? 5 : 8;
+        out->green_position = 5;
+        out->green_size = bpp == 16 ? 6 : 5;
+        if (bpp >= 24) { out->green_position = 8; out->green_size = 8; }
+        out->blue_position = 0;
+        out->blue_size = (bpp >= 24) ? 8 : 5;
+    }
+    return 1;
+}
+
+static const struct video_driver driver_bga = {
+    "bochs-bga", bga_probe, bga_set_mode, 0, 0, 0
+};
+
+static const struct video_driver driver_generic = {
+    "generic-linear-fb", 0, 0, 0, 0, 0
+};
+
+static void select_driver(void) {
+    const struct video_gpu_info *gpu = gpu_present ? &gpu_info : 0;
+    for (int i = 0; i < registered_count; i++) {
+        const struct video_driver *driver = registered_drivers[i];
+        if (!driver->probe || driver->probe(gpu)) {
+            active_driver = driver;
+            return;
+        }
+    }
+    if (driver_bga.probe(gpu)) {
+        active_driver = &driver_bga;
+        return;
+    }
+    active_driver = &driver_generic;
+}
+
+int video_register_driver(const struct video_driver *driver) {
+    if (!driver || !driver->name || registered_count >= VIDEO_MAX_DRIVERS) return 0;
+    registered_drivers[registered_count++] = driver;
+    select_driver();
+    return 1;
+}
+
+const char *video_driver_name(void) {
+    return active_driver ? active_driver->name : driver_generic.name;
+}
+
+const struct video_gpu_info *video_gpu_info(void) {
+    return gpu_present ? &gpu_info : 0;
+}
+
+static void default_layout(uint8_t bpp, struct video_surface_info *s) {
+    s->red_position = bpp == 16 ? 11 : bpp == 15 ? 10 : 16;
+    s->red_size = (bpp == 16 || bpp == 15) ? 5 : 8;
+    s->green_position = (bpp >= 24) ? 8 : 5;
+    s->green_size = (bpp >= 24) ? 8 : (bpp == 16 ? 6 : 5);
+    s->blue_position = 0;
+    s->blue_size = (bpp >= 24) ? 8 : 5;
+}
+
+static int layout_valid(const struct video_surface_info *s, uint8_t bytes) {
+    uint32_t bits = (uint32_t)bytes * 8u;
+    if (!s->red_size || !s->green_size || !s->blue_size) return 0;
+    if (s->red_size > 8 || s->green_size > 8 || s->blue_size > 8) return 0;
+    if (s->red_position + s->red_size > bits || s->green_position + s->green_size > bits ||
+        s->blue_position + s->blue_size > bits) return 0;
+    if ((s->red_position < s->green_position + s->green_size &&
+         s->green_position < s->red_position + s->red_size) ||
+        (s->red_position < s->blue_position + s->blue_size &&
+         s->blue_position < s->red_position + s->red_size) ||
+        (s->green_position < s->blue_position + s->blue_size &&
+         s->blue_position < s->green_position + s->green_size)) return 0;
+    return 1;
+}
+
+static int surface_apply(const struct video_surface_info *info) {
+    struct video_surface_info s;
+    uint8_t bytes;
+    video_framebuffer_ready = 0;
+    video_frame_active = 0;
+    dirty_valid = 0;
+    shadow_ready = 0;
+    accel_pending = 0;
+    if (!info || !info->base || !info->width || !info->height) return 0;
+    if (info->bpp != 15 && info->bpp != 16 && info->bpp != 24 && info->bpp != 32) return 0;
+    bytes = (uint8_t)((info->bpp + 7u) >> 3);
+    if (info->pitch < info->width * bytes) return 0;
+    s = *info;
+    if (!layout_valid(&s, bytes)) default_layout(s.bpp, &s);
+
+    fb.base = s.base;
+    fb.pitch = s.pitch;
+    fb.width = s.width;
+    fb.height = s.height;
+    fb.bpp = s.bpp;
+    fb.bytes = bytes;
+    fb.rpos = s.red_position;
+    fb.rsize = s.red_size;
+    fb.gpos = s.green_position;
+    fb.gsize = s.green_size;
+    fb.bpos = s.blue_position;
+    fb.bsize = s.blue_size;
+    fb.xrgb = (bytes == 4 && fb.rpos == 16 && fb.rsize == 8 && fb.gpos == 8 && fb.gsize == 8 &&
+               fb.bpos == 0 && fb.bsize == 8);
+
+    shadow_pitch = fb.width * bytes;
+    shadow_ready = shadow_pitch <= VIDEO_BACKBUFFER_BYTES / fb.height;
+    for (int i = 0; i < 16; i++) palette_pixel[i] = framebuffer_color(vga_palette[i]);
+
+    video_pixel_width = (int)fb.width;
+    video_pixel_height = (int)fb.height;
+    video_origin_x = 0;
+    video_origin_y = 0;
+    video_columns = (int)(fb.width / VIDEO_CELL_WIDTH);
+    video_rows = (int)(fb.height / VIDEO_CELL_HEIGHT);
+    video_framebuffer_ready = 1;
+    video_clear();
+    return 1;
+}
+
+int video_set_mode(uint32_t width, uint32_t height, uint8_t bpp) {
+    struct video_surface_info surface;
+    if (!active_driver || !active_driver->set_mode) return 0;
+    if (!active_driver->set_mode(width, height, bpp, &surface)) return 0;
+    return surface_apply(&surface);
 }
 
 void video_init(uint32_t magic, uint32_t multiboot_address) {
+    const struct multiboot_info *info;
+    struct video_surface_info surface;
     video_framebuffer_ready = 0;
     video_pixel_width = 0;
     video_pixel_height = 0;
-    if (magic != MULTIBOOT_BOOTLOADER_MAGIC) return;
-    struct multiboot_info *info = (struct multiboot_info *)multiboot_address;
+    video_columns = VGA_COLUMNS;
+    video_rows = VGA_ROWS;
+    video_frame_active = 0;
+    dirty_valid = 0;
+    shadow_ready = 0;
+    accel_pending = 0;
+
+    font_init();
+    gpu_present = pci_find_display(&gpu_info);
+    select_driver();
+
+    if (magic != MULTIBOOT_BOOTLOADER_MAGIC || multiboot_address == 0) return;
+    info = (const struct multiboot_info *)(uintptr_t)multiboot_address;
     if (!(info->flags & MULTIBOOT_INFO_FRAMEBUFFER) ||
         info->framebuffer_width == 0 || info->framebuffer_height == 0 ||
-        (info->framebuffer_bpp != 16 && info->framebuffer_bpp != 24 && info->framebuffer_bpp != 32) ||
+        (info->framebuffer_bpp != 15 && info->framebuffer_bpp != 16 &&
+         info->framebuffer_bpp != 24 && info->framebuffer_bpp != 32) ||
         info->framebuffer_type != 1 || info->framebuffer_address == 0 ||
-        info->framebuffer_pitch < info->framebuffer_width * (info->framebuffer_bpp / 8)) return;
-    framebuffer = (uint8_t *)(uint32_t)info->framebuffer_address;
-    framebuffer_pitch = info->framebuffer_pitch;
-    framebuffer_bpp = info->framebuffer_bpp;
-    framebuffer_bytes_per_pixel = framebuffer_bpp / 8;
-    red_position = info->color_info[0];
-    red_mask_size = info->color_info[1];
-    green_position = info->color_info[2];
-    green_mask_size = info->color_info[3];
-    blue_position = info->color_info[4];
-    blue_mask_size = info->color_info[5];
-    framebuffer_width = info->framebuffer_width;
-    framebuffer_height = info->framebuffer_height;
-    video_pixel_width = (int)framebuffer_width;
-    video_pixel_height = (int)framebuffer_height;
-    video_origin_x = 0;
-    video_origin_y = 0;
-    video_columns = framebuffer_width / VIDEO_CELL_WIDTH;
-    video_rows = framebuffer_height / VIDEO_CELL_HEIGHT;
-    video_framebuffer_ready = 1;
-    video_clear();
+        (sizeof(uintptr_t) < 8 && (info->framebuffer_address >> 32) != 0) ||
+        info->framebuffer_pitch < info->framebuffer_width * ((info->framebuffer_bpp + 7u) / 8u)) return;
+
+    surface.base = (uint8_t *)(uintptr_t)info->framebuffer_address;
+    surface.pitch = info->framebuffer_pitch;
+    surface.width = info->framebuffer_width;
+    surface.height = info->framebuffer_height;
+    surface.bpp = info->framebuffer_bpp;
+    surface.red_position = info->color_info[0];
+    surface.red_size = info->color_info[1];
+    surface.green_position = info->color_info[2];
+    surface.green_size = info->color_info[3];
+    surface.blue_position = info->color_info[4];
+    surface.blue_size = info->color_info[5];
+    surface_apply(&surface);
+}
+
+
+static void clear_surface(uint8_t *base, uint32_t pitch) {
+    uint32_t row_bytes = fb.width * fb.bytes;
+    if (pitch == row_bytes) {
+        mem_zero(base, row_bytes * fb.height);
+        return;
+    }
+    for (uint32_t y = 0; y < fb.height; y++) mem_zero(base + y * pitch, row_bytes);
 }
 
 void video_clear(void) {
     if (!video_framebuffer_ready) {
         uint16_t *text = (uint16_t *)VGA_MEMORY;
-        for (int i = 0; i < 80 * 25; i++) text[i] = (0x07 << 8) | ' ';
+        for (int i = 0; i < VGA_COLUMNS * VGA_ROWS; i++) text[i] = (uint16_t)((0x07 << 8) | ' ');
         return;
     }
-    for (uint32_t y = 0; y < framebuffer_height; y++)
-        for (uint32_t x = 0; x < framebuffer_width; x++) {
-            uint8_t *pixel = framebuffer + y * framebuffer_pitch + x * framebuffer_bytes_per_pixel;
-            for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++) pixel[byte] = 0;
-        }
+    vram_sync();
+    clear_surface(fb.base, fb.pitch);
+    if (shadow_ready) clear_surface(video_backbuffer, shadow_pitch);
+    dirty_valid = 0;
 }
 
 int video_begin_frame(void) {
-    if (!video_framebuffer_ready || framebuffer_width > VIDEO_BACKBUFFER_WIDTH ||
-        framebuffer_height > VIDEO_BACKBUFFER_HEIGHT) return 0;
-    video_backbuffer_pitch = framebuffer_width * framebuffer_bytes_per_pixel;
-    for (uint32_t y = 0; y < framebuffer_height; y++)
-        for (uint32_t byte = 0; byte < video_backbuffer_pitch; byte++)
-            video_backbuffer[y * video_backbuffer_pitch + byte] = framebuffer[y * framebuffer_pitch + byte];
+    if (!video_framebuffer_ready || !shadow_ready) return 0;
     video_frame_x = 0;
     video_frame_y = 0;
-    video_frame_width = framebuffer_width;
-    video_frame_height = framebuffer_height;
+    video_frame_width = fb.width;
+    video_frame_height = fb.height;
     video_frame_active = 1;
     return 1;
 }
 
 int video_begin_region_frame(int x, int y, int width, int height) {
-    int right = x + width;
-    int bottom = y + height;
-    if (!video_framebuffer_ready || framebuffer_width > VIDEO_BACKBUFFER_WIDTH ||
-        framebuffer_height > VIDEO_BACKBUFFER_HEIGHT || width <= 0 || height <= 0) return 0;
+    int right, bottom;
+    if (!video_framebuffer_ready || !shadow_ready || width <= 0 || height <= 0) return 0;
+    right = x + width;
+    bottom = y + height;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
-    if (right > (int)framebuffer_width) right = framebuffer_width;
-    if (bottom > (int)framebuffer_height) bottom = framebuffer_height;
+    if (right > (int)fb.width) right = (int)fb.width;
+    if (bottom > (int)fb.height) bottom = (int)fb.height;
     if (right <= x || bottom <= y) return 0;
-    video_backbuffer_pitch = framebuffer_width * framebuffer_bytes_per_pixel;
     video_frame_x = (uint32_t)x;
     video_frame_y = (uint32_t)y;
     video_frame_width = (uint32_t)(right - x);
     video_frame_height = (uint32_t)(bottom - y);
-    for (uint32_t row = video_frame_y; row < video_frame_y + video_frame_height; row++) {
-        uint32_t offset = video_frame_x * framebuffer_bytes_per_pixel;
-        uint32_t bytes = video_frame_width * framebuffer_bytes_per_pixel;
-        for (uint32_t byte = 0; byte < bytes; byte++)
-            video_backbuffer[row * video_backbuffer_pitch + offset + byte] =
-                framebuffer[row * framebuffer_pitch + offset + byte];
-    }
     video_frame_active = 1;
     return 1;
 }
 
 void video_present(void) {
     if (!video_frame_active) return;
-    for (uint32_t y = 0; y < framebuffer_height; y++)
-        for (uint32_t byte = 0; byte < video_backbuffer_pitch; byte++)
-            framebuffer[y * framebuffer_pitch + byte] = video_backbuffer[y * video_backbuffer_pitch + byte];
-    video_frame_active = 0;
-}
-
-void video_present_region(void) {
-    if (!video_frame_active) return;
-    for (uint32_t row = video_frame_y; row < video_frame_y + video_frame_height; row++) {
-        uint32_t offset = video_frame_x * framebuffer_bytes_per_pixel;
-        uint32_t bytes = video_frame_width * framebuffer_bytes_per_pixel;
-        for (uint32_t byte = 0; byte < bytes; byte++)
-            framebuffer[row * framebuffer_pitch + offset + byte] =
-                video_backbuffer[row * video_backbuffer_pitch + offset + byte];
+    if (dirty_valid) {
+        flush_rect(dirty_x0, dirty_y0, dirty_x1, dirty_y1);
+        dirty_valid = 0;
     }
     video_frame_active = 0;
 }
 
+void video_present_region(void) {
+    video_present();
+}
+
+void video_fill_rect(int x, int y, int width, int height, uint32_t color, uint8_t alpha) {
+    int cx0, cy0, cx1, cy1, unused = 0;
+    uint8_t *base;
+    uint32_t pitch;
+    if (!video_framebuffer_ready || alpha == 0) return;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (!clip_axis(&x, &unused, &width, cx0, cx1) || !clip_axis(&y, &unused, &height, cy0, cy1)) return;
+
+    if (alpha == 255) {
+        uint32_t pixel = framebuffer_color(color);
+        if (!shadow_ready && hw_fill(x, y, width, height, pixel)) return;
+        if (!shadow_ready) vram_sync();
+        base = surface_base();
+        pitch = surface_pitch();
+        for (int row = 0; row < height; row++)
+            fill_pixels(base + (uint32_t)(y + row) * pitch + (uint32_t)x * fb.bytes, pixel, (uint32_t)width, fb.bytes);
+        if (shadow_ready && !video_frame_active && hw_fill(x, y, width, height, pixel)) return;
+        surface_commit(x, y, x + width, y + height);
+        return;
+    }
+    if (!shadow_ready) vram_sync();
+    base = surface_base();
+    pitch = surface_pitch();
+    for (int row = 0; row < height; row++) {
+        uint8_t *p = base + (uint32_t)(y + row) * pitch + (uint32_t)x * fb.bytes;
+        for (int column = 0; column < width; column++, p += fb.bytes)
+            pixel_write(p, blend_pixel(pixel_read(p, fb.bytes), color, alpha), fb.bytes);
+    }
+    surface_commit(x, y, x + width, y + height);
+}
+
+static void surface_copy(uint8_t *base, uint32_t pitch, int sx, int sy, int dx, int dy, int w, int h) {
+    uint32_t bytes = (uint32_t)w * fb.bytes;
+    int reverse = (dy > sy) || (dy == sy && dx > sx);
+    for (int i = 0; i < h; i++) {
+        int row = reverse ? h - 1 - i : i;
+        mem_move(base + (uint32_t)(dy + row) * pitch + (uint32_t)dx * fb.bytes,
+                 base + (uint32_t)(sy + row) * pitch + (uint32_t)sx * fb.bytes, bytes);
+    }
+}
+
+void video_copy_rect(int src_x, int src_y, int dst_x, int dst_y, int width, int height) {
+    int cx0, cy0, cx1, cy1;
+    if (!video_framebuffer_ready) return;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (!clip_axis(&dst_x, &src_x, &width, cx0, cx1) || !clip_axis(&dst_y, &src_y, &height, cy0, cy1)) return;
+    if (!clip_axis(&src_x, &dst_x, &width, 0, (int)fb.width) ||
+        !clip_axis(&src_y, &dst_y, &height, 0, (int)fb.height)) return;
+    if (src_x == dst_x && src_y == dst_y) return;
+
+    if (!shadow_ready) {
+        if (hw_copy(src_x, src_y, dst_x, dst_y, width, height)) return;
+        vram_sync();
+        surface_copy(fb.base, fb.pitch, src_x, src_y, dst_x, dst_y, width, height);
+        return;
+    }
+    surface_copy(video_backbuffer, shadow_pitch, src_x, src_y, dst_x, dst_y, width, height);
+    if (video_frame_active) {
+        dirty_add(dst_x, dst_y, dst_x + width, dst_y + height);
+        return;
+    }
+    if (hw_copy(src_x, src_y, dst_x, dst_y, width, height)) return;
+    flush_rect(dst_x, dst_y, dst_x + width, dst_y + height);
+}
+
+void video_blit(int x, int y, int width, int height, const uint32_t *argb, int stride) {
+    int cx0, cy0, cx1, cy1, ox = 0, oy = 0;
+    uint8_t *base;
+    uint32_t pitch;
+    if (!video_framebuffer_ready || !argb) return;
+    if (stride <= 0) stride = width;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (!clip_axis(&x, &ox, &width, cx0, cx1) || !clip_axis(&y, &oy, &height, cy0, cy1)) return;
+    if (!shadow_ready) vram_sync();
+    base = surface_base();
+    pitch = surface_pitch();
+    for (int row = 0; row < height; row++) {
+        const uint32_t *source = argb + (oy + row) * stride + ox;
+        uint8_t *p = base + (uint32_t)(y + row) * pitch + (uint32_t)x * fb.bytes;
+        for (int column = 0; column < width; column++, p += fb.bytes) {
+            uint32_t value = source[column];
+            uint8_t alpha = (uint8_t)(value >> 24);
+            if (alpha == 0) continue;
+            pixel_write(p, alpha == 255 ? framebuffer_color(value) : blend_pixel(pixel_read(p, fb.bytes), value, alpha),
+                        fb.bytes);
+        }
+    }
+    surface_commit(x, y, x + width, y + height);
+}
+
+void video_scroll(void) {
+    if (!video_framebuffer_ready) {
+#if VIDEO_TEXT_SCROLL
+        uint16_t *text = (uint16_t *)VGA_MEMORY;
+        mem_copy(text, text + VGA_COLUMNS, VGA_COLUMNS * (VGA_ROWS - 1) * 2u);
+        for (int column = 0; column < VGA_COLUMNS; column++)
+            text[(VGA_ROWS - 1) * VGA_COLUMNS + column] = (uint16_t)((0x07 << 8) | ' ');
+#endif
+        return;
+    }
+    {
+        int width = video_columns * VIDEO_CELL_WIDTH;
+        int height = video_rows * VIDEO_CELL_HEIGHT;
+        int x = (int)video_origin_x;
+        int y = (int)video_origin_y;
+        video_copy_rect(x, y + VIDEO_CELL_HEIGHT, x, y, width, height - VIDEO_CELL_HEIGHT);
+        video_fill_rect(x, y + height - VIDEO_CELL_HEIGHT, width, VIDEO_CELL_HEIGHT, 0x000000, 255);
+    }
+}
+
+void video_put_cell(int column, int row, char character, uint8_t color) {
+    uint32_t cell[VIDEO_CELL_WIDTH * VIDEO_CELL_HEIGHT];
+    const uint8_t *glyph;
+    uint32_t foreground, background;
+    int x, y, cx0, cy0, cx1, cy1, ox = 0, oy = 0, width = VIDEO_CELL_WIDTH, height = VIDEO_CELL_HEIGHT;
+    uint8_t *base;
+    uint32_t pitch;
+
+    if (!video_framebuffer_ready) {
+        if (column < 0 || column >= VGA_COLUMNS || row < 0 || row >= VGA_ROWS) return;
+        ((uint16_t *)VGA_MEMORY)[row * VGA_COLUMNS + column] = (uint16_t)((uint16_t)color << 8) | (uint8_t)character;
+        return;
+    }
+    if (column < 0 || column >= video_columns || row < 0 || row >= video_rows) return;
+
+    glyph = font[(uint8_t)character];
+    foreground = palette_pixel[color & 0x0F];
+    background = palette_pixel[(color >> 4) & 0x0F];
+    for (int gy = 0; gy < VIDEO_CELL_HEIGHT; gy++) {
+        uint8_t bits = (gy >= GLYPH_TOP && gy < GLYPH_TOP + GLYPH_ROWS) ? glyph[gy - GLYPH_TOP] : 0;
+        for (int gx = 0; gx < VIDEO_CELL_WIDTH; gx++) {
+            int on = gx >= 1 && gx <= 5 && ((bits >> (5 - gx)) & 1);
+            cell[gy * VIDEO_CELL_WIDTH + gx] = on ? foreground : background;
+        }
+    }
+
+    x = (int)video_origin_x + column * VIDEO_CELL_WIDTH;
+    y = (int)video_origin_y + row * VIDEO_CELL_HEIGHT;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (!clip_axis(&x, &ox, &width, cx0, cx1) || !clip_axis(&y, &oy, &height, cy0, cy1)) return;
+    if (!shadow_ready) vram_sync();
+    base = surface_base();
+    pitch = surface_pitch();
+    for (int r = 0; r < height; r++)
+        write_pixels(base + (uint32_t)(y + r) * pitch + (uint32_t)x * fb.bytes,
+                     cell + (oy + r) * VIDEO_CELL_WIDTH + ox, (uint32_t)width, fb.bytes);
+    surface_commit(x, y, x + width, y + height);
+}
+
 void video_put_pixel(int x, int y, uint32_t color, uint8_t alpha) {
-    uint8_t *target;
-    uint32_t target_pitch;
-    uint8_t *address;
+    int cx0, cy0, cx1, cy1;
+    uint8_t *p;
     uint32_t value;
-    if (!video_framebuffer_ready || x < 0 || y < 0 ||
-        (uint32_t)x >= framebuffer_width || (uint32_t)y >= framebuffer_height || alpha == 0) return;
-    target = video_frame_active ? video_backbuffer : framebuffer;
-    target_pitch = video_frame_active ? video_backbuffer_pitch : framebuffer_pitch;
-    address = target + y * target_pitch + x * framebuffer_bytes_per_pixel;
-    value = framebuffer_color(color);
-    if (alpha < 255) return;
-    for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++) address[byte] = (uint8_t)(value >> (byte * 8));
+    if (!video_framebuffer_ready || alpha == 0) return;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (x < cx0 || x >= cx1 || y < cy0 || y >= cy1) return;
+    if (!shadow_ready) vram_sync();
+    p = surface_base() + (uint32_t)y * surface_pitch() + (uint32_t)x * fb.bytes;
+    value = alpha == 255 ? framebuffer_color(color) : blend_pixel(pixel_read(p, fb.bytes), color, alpha);
+    pixel_write(p, value, fb.bytes);
+    if (video_frame_active) {
+        dirty_add(x, y, x + 1, y + 1);
+    } else if (shadow_ready) {
+        vram_sync();
+        pixel_write(fb.base + (uint32_t)y * fb.pitch + (uint32_t)x * fb.bytes, value, fb.bytes);
+    }
 }
 
 void video_capture_region(int x, int y, int width, int height, uint8_t *buffer) {
-    uint8_t *source_buffer;
-    uint32_t source_pitch;
-    if (!video_framebuffer_ready || buffer == 0) return;
-    source_buffer = video_frame_active ? video_backbuffer : framebuffer;
-    source_pitch = video_frame_active ? video_backbuffer_pitch : framebuffer_pitch;
-    for (int row = 0; row < height; row++) for (int column = 0; column < width; column++) {
-        uint8_t *destination = buffer + (row * width + column) * 4;
-        int source_x = x + column;
+    const uint8_t *base;
+    uint32_t pitch;
+    if (!video_framebuffer_ready || buffer == 0 || width <= 0 || height <= 0) return;
+    if (!shadow_ready) vram_sync();
+    base = surface_base();
+    pitch = surface_pitch();
+    for (int row = 0; row < height; row++) {
+        uint8_t *destination = buffer + (uint32_t)row * (uint32_t)width * 4u;
         int source_y = y + row;
-        for (uint8_t byte = 0; byte < 4; byte++) destination[byte] = 0;
-        if (source_x < 0 || source_y < 0 || (uint32_t)source_x >= framebuffer_width ||
-            (uint32_t)source_y >= framebuffer_height) continue;
+        int first = 0, last = width;
+        if (source_y < 0 || source_y >= (int)fb.height) {
+            mem_zero(destination, (uint32_t)width * 4u);
+            continue;
+        }
+        if (x < 0) first = -x;
+        if (x + width > (int)fb.width) last = (int)fb.width - x;
+        if (first >= last || first >= width || last <= 0) {
+            mem_zero(destination, (uint32_t)width * 4u);
+            continue;
+        }
+        if (first > 0) mem_zero(destination, (uint32_t)first * 4u);
+        if (last < width) mem_zero(destination + (uint32_t)last * 4u, (uint32_t)(width - last) * 4u);
         {
-            const uint8_t *source = source_buffer + source_y * source_pitch + source_x * framebuffer_bytes_per_pixel;
-            for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++) destination[byte] = source[byte];
+            const uint8_t *source = base + (uint32_t)source_y * pitch + (uint32_t)(x + first) * fb.bytes;
+            uint8_t *out = destination + (uint32_t)first * 4u;
+            if (fb.bytes == 4) {
+                mem_copy(out, source, (uint32_t)(last - first) * 4u);
+            } else {
+                for (int column = first; column < last; column++, source += fb.bytes, out += 4) {
+                    out[3] = 0;
+                    for (uint8_t byte = 0; byte < 3; byte++) out[byte] = byte < fb.bytes ? source[byte] : 0;
+                }
+            }
         }
     }
 }
 
 void video_restore_region(int x, int y, int width, int height, const uint8_t *buffer) {
-    uint8_t *destination_buffer;
-    uint32_t destination_pitch;
-    if (!video_framebuffer_ready || buffer == 0) return;
-    destination_buffer = video_frame_active ? video_backbuffer : framebuffer;
-    destination_pitch = video_frame_active ? video_backbuffer_pitch : framebuffer_pitch;
-    for (int row = 0; row < height; row++) for (int column = 0; column < width; column++) {
-        int destination_x = x + column;
-        int destination_y = y + row;
-        if (destination_x < 0 || destination_y < 0 || (uint32_t)destination_x >= framebuffer_width ||
-            (uint32_t)destination_y >= framebuffer_height) continue;
-        {
-            uint8_t *destination = destination_buffer + destination_y * destination_pitch + destination_x * framebuffer_bytes_per_pixel;
-            const uint8_t *source = buffer + (row * width + column) * 4;
-            for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++) destination[byte] = source[byte];
+    int cx0, cy0, cx1, cy1, ox = 0, oy = 0, full_width = width;
+    uint8_t *base;
+    uint32_t pitch;
+    if (!video_framebuffer_ready || buffer == 0 || width <= 0 || height <= 0) return;
+    get_clip(&cx0, &cy0, &cx1, &cy1);
+    if (!clip_axis(&x, &ox, &width, cx0, cx1) || !clip_axis(&y, &oy, &height, cy0, cy1)) return;
+    if (!shadow_ready) vram_sync();
+    base = surface_base();
+    pitch = surface_pitch();
+    for (int row = 0; row < height; row++) {
+        uint8_t *destination = base + (uint32_t)(y + row) * pitch + (uint32_t)x * fb.bytes;
+        const uint8_t *source = buffer + ((uint32_t)(oy + row) * (uint32_t)full_width + (uint32_t)ox) * 4u;
+        if (fb.bytes == 4) {
+            mem_copy(destination, source, (uint32_t)width * 4u);
+        } else {
+            for (int column = 0; column < width; column++, destination += fb.bytes, source += 4)
+                for (uint8_t byte = 0; byte < fb.bytes; byte++) destination[byte] = source[byte];
         }
     }
-}
-
-void video_scroll(void) {
-    if (!video_framebuffer_ready) return;
-    int width = video_columns * VIDEO_CELL_WIDTH;
-    int height = video_rows * VIDEO_CELL_HEIGHT;
-    for (int y = VIDEO_CELL_HEIGHT; y < height; y++)
-        for (int x = 0; x < width; x++)
-            for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++)
-                framebuffer[(video_origin_y + y - VIDEO_CELL_HEIGHT) * framebuffer_pitch +
-                            (video_origin_x + x) * framebuffer_bytes_per_pixel + byte] =
-                    framebuffer[(video_origin_y + y) * framebuffer_pitch +
-                                (video_origin_x + x) * framebuffer_bytes_per_pixel + byte];
-    for (int column = 0; column < video_columns; column++) video_put_cell(column, video_rows - 1, ' ', 0x07);
-}
-
-void video_put_cell(int column, int row, char character, uint8_t color) {
-    if (!video_framebuffer_ready) {
-        if (column < 0 || column >= 80 || row < 0 || row >= 25) return;
-        ((uint16_t *)VGA_MEMORY)[row * 80 + column] = (uint16_t)(color << 8) | (uint8_t)character;
-        return;
-    }
-    if (column < 0 || column >= video_columns || row < 0 || row >= video_rows) return;
-    uint32_t foreground = color_rgb(color, 1);
-    uint32_t background = color_rgb(color, 0);
-    uint32_t pixel_value = 0;
-    uint32_t foreground_rgb = foreground;
-    uint32_t background_rgb = background;
-    uint32_t background_value;
-    if (framebuffer_bpp == 32) {
-        pixel_value = foreground_rgb;
-        background_value = background_rgb;
-    } else {
-        uint32_t red = ((foreground_rgb >> 16) * ((1u << red_mask_size) - 1u) / 255u) << red_position;
-        uint32_t green = ((foreground_rgb >> 8) * ((1u << green_mask_size) - 1u) / 255u) << green_position;
-        uint32_t blue = (foreground_rgb * ((1u << blue_mask_size) - 1u) / 255u) << blue_position;
-        pixel_value = red | green | blue;
-        red = ((background_rgb >> 16) * ((1u << red_mask_size) - 1u) / 255u) << red_position;
-        green = ((background_rgb >> 8) * ((1u << green_mask_size) - 1u) / 255u) << green_position;
-        blue = (background_rgb * ((1u << blue_mask_size) - 1u) / 255u) << blue_position;
-        background_value = red | green | blue;
-    }
-    int glyph_top = (VIDEO_CELL_HEIGHT - 7) / 2;
-    for (int y = 0; y < VIDEO_CELL_HEIGHT; y++) {
-        uint8_t bits = glyph_row(character, y - glyph_top);
-        for (int x = 0; x < VIDEO_CELL_WIDTH; x++) {
-            int pixel = (y >= glyph_top && y < glyph_top + 7 && x >= 1 && x <= 5 &&
-                         (bits & (1 << (5 - x)))) != 0;
-            uint32_t value = pixel ? pixel_value : background_value;
-            uint8_t *target = video_frame_active ? video_backbuffer : framebuffer;
-            uint32_t target_pitch = video_frame_active ? video_backbuffer_pitch : framebuffer_pitch;
-            uint8_t *address = target + (video_origin_y + row * VIDEO_CELL_HEIGHT + y) * target_pitch +
-                               (video_origin_x + column * VIDEO_CELL_WIDTH + x) * framebuffer_bytes_per_pixel;
-            for (uint8_t byte = 0; byte < framebuffer_bytes_per_pixel; byte++) address[byte] = (uint8_t)(value >> (byte * 8));
-        }
-    }
+    surface_commit(x, y, x + width, y + height);
 }
