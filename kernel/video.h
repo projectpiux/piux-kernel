@@ -7,9 +7,14 @@
 extern "C" {
 #endif
 
+/* Size of one text cell in pixels. The glyph (5x7) is centred inside it. */
 #define VIDEO_CELL_WIDTH 8
 #define VIDEO_CELL_HEIGHT 16
 
+/* State exported to the rest of the kernel.
+ * video_framebuffer_ready == 0 : legacy VGA text mode (80x25), no pixels.
+ * video_framebuffer_ready == 1 : linear framebuffer at native resolution;
+ *                                video_columns/rows are pixel size / cell size. */
 extern int video_framebuffer_ready;
 extern int video_columns;
 extern int video_rows;
