@@ -1,35 +1,22 @@
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
+#if defined(PIUX_MODULE_NET)
+
 #include "net.h"
 #include "ip.h"
 #include "udp.h"
 #include "eth.h"
 
-/* x86 is little-endian; network byte order is big-endian, so this is
-   always a byte swap regardless of direction (host<->network). */
-uint16_t net_htons(uint16_t value) {
-    return (uint16_t)((value << 8) | (value >> 8));
-}
+#if defined(PIUX_MODULE_NET)
+#include "piux_module.h"
+#include "rtl8139.h"
+#include "dhcp.h"
 
-uint32_t net_htonl(uint32_t value) {
-    return ((value & 0x000000FFU) << 24) |
-           ((value & 0x0000FF00U) << 8) |
-           ((value & 0x00FF0000U) >> 8) |
-           ((value & 0xFF000000U) >> 24);
-}
-
-uint16_t net_checksum(const void *data, uint32_t length, uint32_t initial_sum) {
-    const uint8_t *bytes = (const uint8_t *)data;
-    uint32_t sum = initial_sum;
-    while (length > 1) {
-        sum += (uint32_t)((bytes[0] << 8) | bytes[1]);
-        bytes += 2;
-        length -= 2;
-    }
-    if (length == 1) sum += (uint32_t)(bytes[0] << 8);
-    while (sum >> 16) sum = (sum & 0xFFFFU) + (sum >> 16);
-    return (uint16_t)(~sum & 0xFFFFU);
-}
+extern int (*net_resolve_host_dispatch)(const char *text, uint32_t *out_ip);
+extern uint32_t (*net_parse_ip_dispatch)(const char *text);
+extern void (*net_format_ip_dispatch)(uint32_t address, char *buffer);
+#endif
 
 uint32_t net_parse_ip(const char *text) {
     uint32_t result = 0;
@@ -160,3 +147,46 @@ void net_format_ip(uint32_t address, char *buffer) {
     }
     buffer[offset] = '\0';
 }
+
+#if defined(PIUX_MODULE_NET)
+
+int net_module_init(void) {
+    if (rtl8139_init() == 0) dhcp_configure();
+    return 0;
+}
+
+uint32_t (*net_parse_ip_dispatch)(const char *text) = net_parse_ip;
+int (*net_resolve_host_dispatch)(const char *text, uint32_t *out_ip) = net_resolve_host;
+void (*net_format_ip_dispatch)(uint32_t address, char *buffer) = net_format_ip;
+
+static const char *const net_module_names[] = {
+    "net_parse_ip_dispatch", "net_resolve_host_dispatch", "net_format_ip_dispatch",
+    "dhcp_configure"
+};
+
+static const void *const net_module_addresses[] = {
+    PIUX_EXPORT(&net_parse_ip_dispatch), PIUX_EXPORT(&net_resolve_host_dispatch),
+    PIUX_EXPORT(&net_format_ip_dispatch), PIUX_EXPORT(&dhcp_configure)
+};
+
+void piux_module_exports(const char *const **names, const void *const **addresses,
+                         uint32_t *count) {
+    *names = net_module_names;
+    *addresses = net_module_addresses;
+    *count = sizeof(net_module_names) / sizeof(net_module_names[0]);
+}
+
+static const char *const net_module_deps[] = { };
+
+PIUX_MODULE(
+    .name = "net",
+    .version = PIUX_MODULE_VERSION,
+    .deps = 0,
+    .dep_count = 0,
+    .init = net_module_init,
+    .description = "ARP/IPv4/ICMP/UDP/TCP/DHCP protocol stack"
+);
+
+#endif
+
+#endif

@@ -22,7 +22,7 @@
 
 <br>
 
-![Piux desktop preview](preview.jpeg)
+![Piux desktop preview](preview.png)
 
 <sub>The PDE desktop running on Piux in QEMU.</sub>
 
@@ -36,16 +36,17 @@
 
 ## ✨ Overview
 
-Piux is an experimental operating system built to be **read, understood and modified**. It boots through GRUB, switches to a 1280×720 framebuffer, mounts a real ext2 disk and starts **PDE**, its desktop environment, all written in freestanding C and NASM. Prefer a keyboard-driven setup? Switch to **pWM**, the alternative tiling window manager.
+Piux is an experimental operating system built to be **read, understood and modified**. It boots through GRUB, switches to a 1280×720 framebuffer, mounts a real ext2 disk and starts **PDE**, its desktop environment, all written in freestanding C and NASM.
 
 It follows a rolling-release model with stable ISO snapshots, and every commit can be built into a working system.
 
 | | |
 |---|---|
 | 🧠 **Kernel** | 32-bit protected mode with paging, interrupts, a timer and user-mode support |
+| 🧩 **Modules** | Relocatable kernel modules (VFS, commands, net, installer) loaded at boot |
 | 💾 **Storage** | ATA disk driver and a read/write ext2 filesystem behind a Unix-like VFS |
 | 🖥️ **Graphics** | Native 1280×720 32-bit framebuffer with software rendering and double buffering |
-| 🪟 **Interfaces** | PDE (default desktop) and pWM (alternative tiling window manager) |
+| 🪟 **Interface** | PDE desktop running in user mode |
 | 🔐 **Accounts** | First-boot installer, login and hashed passwords |
 | 🌐 **Network** | RTL8139 driver and a minimal IP stack, with a built-in package manager |
 
@@ -158,12 +159,11 @@ Type `help` at any time to list the available commands.
 
 ## 🪟 Interfaces
 
-Piux ships with two user interfaces, both running on the same kernel and sharing the same command set.
+Piux ships with PDE, a mouse- and keyboard-driven desktop whose interface and registered apps run in user mode.
 
 | Interface | Role | Description |
 |---|---|---|
-| **PDE** | Default | The Piux Desktop Environment: a mouse and keyboard desktop rendered directly into the framebuffer. |
-| **pWM** | Alternative | A minimal tiling window manager inspired by tiled desktops. Terminals are arranged automatically to fit the screen, with keyboard and mouse focus. |
+| **PDE** | Desktop | The Piux Desktop Environment: a mouse and keyboard desktop rendered through kernel video and input syscalls. |
 
 ---
 
@@ -173,13 +173,15 @@ Piux ships with two user interfaces, both running on the same kernel and sharing
 
 ```text
 ┌──────┐   ┌──────┐   ┌──────────────┐   ┌─────────────┐   ┌───────────────────┐   ┌─────────────┐
-│ BIOS │ ─▶│ GRUB │ ─▶│ Piux kernel  │ ─▶│ ext2 mount  │ ─▶│ installer / login │ ─▶│  PDE / pWM  │
+│ BIOS │ ─▶│ GRUB │ ─▶│ Piux kernel  │ ─▶│ ext2 mount  │ ─▶│ installer / login │ ─▶│     PDE     │
 └──────┘   └──────┘   └──────────────┘   └─────────────┘   └───────────────────┘   └─────────────┘
 ```
 
 **Filesystem.** Everything is exposed through a Unix-like VFS with file descriptors and device nodes such as `/dev/console` and `/dev/hda`. The ext2 driver is non-journaled and supports direct, single- and double-indirect blocks, file creation, reading, writing and deletion. Without a disk, Piux falls back to RAMFS.
 
-**Processes.** The kernel provides `int 0x80` syscalls, a kernel/user GDT with TSS, and a loader for ring3 ELF binaries. Scheduling is cooperative and processes currently share one identity-mapped address space.
+**Processes.** The kernel provides `int 0x80` syscalls, a kernel/user GDT with TSS, and isolated page directories for synchronous ring3 ELF execution. PDE and its registered apps run from `desktop.elf` in user mode; the shell, installer, and `process_create` callbacks remain kernel-side. There is not yet a scheduler for independent user processes.
+
+**Modules.** The core binary is small on purpose: the VFS, the command table, the network stack and the installer are built as relocatable modules (`/lib/modules/*.mod`) that the kernel links into itself at boot through its own ELF loader and kernel-symbol table. They run in kernel mode, in the same address space, but are versioned, dependency-ordered and reloadable — a monolithic kernel with a clean core/module boundary. See `docs/MODULES.md`.
 
 **Graphics.** Text is rendered directly into the framebuffer with a software bitmap font. The interfaces draw into a back buffer and present complete frames, which avoids flicker.
 
@@ -188,7 +190,7 @@ Piux ships with two user interfaces, both running on the same kernel and sharing
 <details>
 <summary><b>Known limitations</b></summary>
 
-- No per-process address space isolation
+- No scheduler for independent user processes
 - No general-purpose allocator with `free`
 - No DHCP, DNS, real sockets or reliable TCP
 - No ext2 rename, truncate or triple-indirect growth
@@ -196,7 +198,6 @@ Piux ships with two user interfaces, both running on the same kernel and sharing
 - No hardware-accelerated graphics
 - Limited keyboard layouts, no AltGr
 - No shell pipes, redirection or variables
-- pWM terminals are not independent user-space processes
 
 </details>
 

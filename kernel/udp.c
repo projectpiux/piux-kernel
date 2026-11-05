@@ -26,7 +26,7 @@ int udp_send(uint32_t destination_ip, uint16_t destination_port, uint16_t source
     header->source_port = net_htons(source_port);
     header->destination_port = net_htons(destination_port);
     header->length = net_htons((uint16_t)(sizeof(udp_header_t) + length));
-    header->checksum = 0; /* checksum is optional over IPv4 */
+    header->checksum = 0; 
 
     for (uint16_t index = 0; index < length; index++) packet[sizeof(udp_header_t) + index] = ((const uint8_t *)data)[index];
 

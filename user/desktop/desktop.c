@@ -6,13 +6,16 @@
 #include "keyboard.h"
 #include "mouse.h"
 #include "video.h"
+#include "pixelgfx.h"
+#include "pixelfont.h"
+#include "taskbar.h"
 
 extern void vga_clear(void);
 extern const uint8_t _binary_build_cursor_rgba_start[];
 extern const uint8_t _binary_build_cursor_rgba_end[];
 
-#define DESKTOP_MIN_WIDTH       24
-#define DESKTOP_MIN_HEIGHT      12
+#define DESKTOP_MIN_WIDTH       320
+#define DESKTOP_MIN_HEIGHT      240
 #define DESKTOP_CURSOR_SIZE     24
 #define DESKTOP_KEY_DRAIN_LIMIT 32
 #define DESKTOP_CASCADE_STEPS   6
@@ -32,8 +35,6 @@ static int desktop_active;
 static int z_order[DESKTOP_MAX_WINDOWS];
 static int z_count;
 
-static int cursor_x;
-static int cursor_y;
 static int cursor_pixel_x;
 static int cursor_pixel_y;
 static int cursor_buttons;
@@ -78,10 +79,11 @@ static int point_in_window(const desktop_window_t *window, int x, int y) {
 }
 
 static void sync_content(desktop_window_t *window) {
-    window->context.content.x = window->x + 1;
-    window->context.content.y = window->y + 2;
-    window->context.content.width = window->width - 2;
-    window->context.content.height = window->height - 3;
+    /* contenuto = area interna al bordo, sotto la barra titolo, IN PIXEL */
+    window->context.content.x = window->x + DESKTOP_BORDER;
+    window->context.content.y = window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H;
+    window->context.content.width = window->width - DESKTOP_BORDER * 2;
+    window->context.content.height = window->height - DESKTOP_BORDER * 2 - DESKTOP_TITLEBAR_H;
 }
 
 static int count_open_windows(void) {
@@ -153,40 +155,32 @@ static void collect_cover(void) {
     }
 }
 
-static int cell_covered(int x, int y) {
-    for (int k = 0; k < cover_count; k++)
-        if (point_in_window(cover[k], x, y)) return 1;
-    return 0;
-}
+/* (rimossa la copertura a celle: il wallpaper è ora a fasce pixel) */
 
 static void draw_wallpaper_region(int x, int y, int width, int height) {
     int right = x + width;
     int bottom = y + height;
-    int desktop_height = video_rows - 1;
+    int desktop_height = video_pixel_height - taskbar_height();
     if (x < 0) x = 0;
     if (y < 0) y = 0;
-    if (right > video_columns) right = video_columns;
+    if (right > video_pixel_width) right = video_pixel_width;
     if (bottom > desktop_height) bottom = desktop_height;
-    for (int row = y; row < bottom; row++) {
-        int diagonal = video_columns / 5 + row / 3;
-        int second_diagonal = video_columns / 2 + row / 5;
-        for (int column = x; column < right; column++) {
-            uint8_t color = row < desktop_height / 2 ? 0x19 : 0x91;
-            char character = ' ';
-            if (cell_covered(column, row)) continue;
-            if (column >= diagonal && column < diagonal + video_columns / 4) color = 0x39;
-            if (column >= second_diagonal && column < second_diagonal + video_columns / 5)
-                color = 0xB9;
-            if (row == 2 && column >= 2 && column < 2 + WALLPAPER_BRAND_LENGTH &&
-                video_columns > 18 && desktop_height > 3) {
-                character = wallpaper_brand[column - 2];
-                color = 0x1B;
-            } else if (row == 3 && column >= 2 && column < 2 + WALLPAPER_HINT_LENGTH &&
-                       video_columns > 2 + WALLPAPER_HINT_LENGTH && desktop_height > 5) {
-                character = wallpaper_hint[column - 2];
-                color = 0x13;
-            }
-            video_put_cell(column, row, character, color);
+    if (right <= x || bottom <= y) return;
+    /* sfumatura a fasce orizzontali in pixel (nessuna griglia) */
+    for (int row = y; row < bottom; row += 4) {
+        int band_bottom = row + 4;
+        if (band_bottom > bottom) band_bottom = bottom;
+        uint32_t color = row < desktop_height / 2 ? 0x0C1C30u : 0x101828u;
+        if (row >= desktop_height / 2 - 24 && row < desktop_height / 2)
+            color = 0x14243C;  /* frangia di transizione */
+        pixel_fill_rect(x, row, right - x, band_bottom - row, color);
+    }
+    /* il testo del wallpaper si disegna solo in full draw (non nei drag frame
+       parziali, dove sovrapporrebbe le finestre) */
+    if (x == 0 && y == 0 && width == video_pixel_width && height >= desktop_height) {
+        if (desktop_height > 60) {
+            pixel_draw_text(16, 12, wallpaper_brand, 0xBFDFFFu);
+            pixel_draw_text(16, 34, wallpaper_hint, 0x607890u);
         }
     }
 }
@@ -195,30 +189,32 @@ static void draw_window(int index) {
     desktop_window_t *window = &windows[index];
     int width = window->width;
     int height = window->height;
-    int right = window->x + width - 1;
     int active = index == active_window;
-    uint8_t title_color = active ? 0x1F : 0x17;
-    uint8_t frame_color = active ? 0x0B : 0x08;
-    uint8_t close_color = active ? 0x4F : 0x47;
+    uint32_t frame_color = active ? 0x0B60B0u : 0x404040u;
+    uint32_t title_bg    = active ? 0x0B60B0u : 0x282828u;
+    uint32_t close_bg    = active ? 0xB02020u : 0x602020u;
     if (!window_visible(window)) return;
-    for (int row = 0; row < height; row++) {
-        for (int column = 0; column < width; column++) {
-            char character = ' ';
-            uint8_t color = 0x07;
-            if (row == 0 || row == height - 1) character = '-';
-            if (column == 0 || column == width - 1) character = '|';
-            if ((row == 0 || row == height - 1) &&
-                (column == 0 || column == width - 1)) character = '+';
-            if (character != ' ') color = frame_color;
-            if (row == 1) color = title_color;
-            video_put_cell(window->x + column, window->y + row, character, color);
-        }
+    /* corpo: riempimento scuro + bordo pieno in pixel */
+    pixel_fill_rect(window->x, window->y, width, height, 0x101010u);
+    pixel_draw_rect_border(window->x, window->y, width, height, DESKTOP_BORDER, frame_color);
+    /* barra titolo */
+    pixel_fill_rect(window->x + DESKTOP_BORDER, window->y + DESKTOP_BORDER,
+                    width - DESKTOP_BORDER * 2, DESKTOP_TITLEBAR_H, title_bg);
+    {
+        int text_y = window->y + DESKTOP_BORDER + (DESKTOP_TITLEBAR_H - PIXFONT_HEIGHT) / 2;
+        int title_max = width - DESKTOP_BORDER * 2 - 64;
+        char name[32];
+        int chars = 0;
+        while (window->application->name[chars] && chars < 31 &&
+               (chars + 1) * (PIXFONT_WIDTH + 1) <= title_max) chars++;
+        name[chars] = '\0';
+        for (int k = 0; k < chars; k++) name[k] = window->application->name[k];
+        pixel_draw_text(window->x + DESKTOP_BORDER + 8, text_y, name, 0xFFFFFFu);
     }
-    for (int column = 0; window->application->name[column] && column < width - 7; column++)
-        video_put_cell(window->x + 2 + column, window->y + 1,
-                       window->application->name[column], title_color);
-    video_put_cell(right - 4, window->y + 1, '_', title_color);
-    video_put_cell(right - 2, window->y + 1, 'X', close_color);
+    /* minimizza e chiudi: quadratini in pixel, coerenti con gli hit-test */
+    pixel_fill_rect(window->x + width - DESKTOP_BORDER - 54, window->y + DESKTOP_BORDER + 11, 16, 3, 0xFFFFFFu);
+    pixel_fill_rect(window->x + width - DESKTOP_BORDER - 32, window->y + DESKTOP_BORDER + 5, 16, 16, close_bg);
+    pixel_draw_text(window->x + width - DESKTOP_BORDER - 29, window->y + DESKTOP_BORDER + 2, "x", 0xFFFFFFu);
     sync_content(window);
     window->application->render(&window->context);
 }
@@ -226,8 +222,7 @@ static void draw_window(int index) {
 static void draw_desktop(void) {
     int buffered = video_begin_frame();
     cursor_background_valid = 0;
-    collect_cover();
-    draw_wallpaper_region(0, 0, video_columns, video_rows - 1);
+    draw_wallpaper_region(0, 0, video_pixel_width, video_pixel_height);
     for (int k = 0; k < z_count; k++) draw_window(z_order[k]);
     taskbar_draw(windows, window_count, active_window);
     launcher_draw();
@@ -252,10 +247,6 @@ static void draw_drag_frame(void) {
     int bottom = dirty_y + dirty_height;
     int new_right = window->x + window->width;
     int new_bottom = window->y + window->height;
-    int cell_left;
-    int cell_top;
-    int cell_right;
-    int cell_bottom;
     int frame_x;
     int frame_y;
     int frame_right;
@@ -263,14 +254,10 @@ static void draw_drag_frame(void) {
     int buffered;
     if (new_right > right) right = new_right;
     if (new_bottom > bottom) bottom = new_bottom;
-    cell_left = left;
-    cell_top = top;
-    cell_right = right;
-    cell_bottom = bottom;
-    frame_x = left * VIDEO_CELL_WIDTH;
-    frame_y = top * VIDEO_CELL_HEIGHT;
-    frame_right = right * VIDEO_CELL_WIDTH;
-    frame_bottom = bottom * VIDEO_CELL_HEIGHT;
+    frame_x = left;
+    frame_y = top;
+    frame_right = right;
+    frame_bottom = bottom;
     if (cursor_background_valid) {
         if (cursor_drawn_x < frame_x) frame_x = cursor_drawn_x;
         if (cursor_drawn_y < frame_y) frame_y = cursor_drawn_y;
@@ -296,8 +283,8 @@ static void draw_drag_frame(void) {
     draw_wallpaper_region(dirty_x, dirty_y, dirty_width, dirty_height);
     for (int k = 0; k < z_count; k++) {
         const desktop_window_t *candidate = &windows[z_order[k]];
-        if (candidate->x >= cell_right || candidate->x + candidate->width <= cell_left ||
-            candidate->y >= cell_bottom || candidate->y + candidate->height <= cell_top) continue;
+        if (candidate->x >= frame_right || candidate->x + candidate->width <= frame_x ||
+            candidate->y >= frame_bottom || candidate->y + candidate->height <= frame_y) continue;
         draw_window(z_order[k]);
     }
     draw_cursor();
@@ -349,16 +336,17 @@ static int launch_application(const app_definition_t *application) {
             break;
         }
     if (slot < 0) return -1;
-    width = video_columns - 4;
-    if (width > 64) width = 64;
-    height = video_rows - 4;
-    if (height > 20) height = 20;
+    width = video_pixel_width * 2 / 3;
+    if (width > 960) width = 960;
+    height = video_pixel_height * 2 / 3;
+    if (height > 640) height = 640;
     if (width < DESKTOP_MIN_WIDTH || height < DESKTOP_MIN_HEIGHT) return -1;
     cascade = count_open_windows() % DESKTOP_CASCADE_STEPS;
-    x = 2 + cascade * 3;
-    y = 1 + cascade;
-    if (x + width >= video_columns) x = video_columns - width - 1;
-    if (y + height >= video_rows - 1) y = video_rows - height - 2;
+    x = 40 + cascade * 32;
+    y = 30 + cascade * 24;
+    if (x + width >= video_pixel_width) x = video_pixel_width - width - 8;
+    if (y + height >= video_pixel_height - taskbar_height())
+        y = video_pixel_height - taskbar_height() - height - 4;
     if (x < 0) x = 0;
     if (y < 0) y = 0;
     windows[slot].x = x;
@@ -385,27 +373,6 @@ static int top_window_at(int x, int y) {
     return -1;
 }
 
-static void clamp_to_screen(void) {
-    int max_height = video_rows - 1;
-    for (int index = 0; index < window_count; index++) {
-        desktop_window_t *window = &windows[index];
-        if (!window->open) continue;
-        if (window->width > video_columns) window->width = video_columns;
-        if (window->height > max_height) window->height = max_height;
-        if (window->x + window->width > video_columns) window->x = video_columns - window->width;
-        if (window->y + window->height > max_height) window->y = max_height - window->height;
-        if (window->x < 0) window->x = 0;
-        if (window->y < 0) window->y = 0;
-        sync_content(window);
-    }
-    if (cursor_pixel_x >= video_columns * VIDEO_CELL_WIDTH)
-        cursor_pixel_x = video_columns * VIDEO_CELL_WIDTH - 1;
-    if (cursor_pixel_y >= video_rows * VIDEO_CELL_HEIGHT)
-        cursor_pixel_y = video_rows * VIDEO_CELL_HEIGHT - 1;
-    cursor_x = cursor_pixel_x / VIDEO_CELL_WIDTH;
-    cursor_y = cursor_pixel_y / VIDEO_CELL_HEIGHT;
-}
-
 static void select_launcher_item(int item) {
     if (item >= 0) launch_application(app_registry_get(item));
     launcher_set_open(0);
@@ -414,12 +381,10 @@ static void select_launcher_item(int item) {
 static int resize_zone(const desktop_window_t *window, int x, int y, int *zone_x, int *zone_y) {
     int rel_x = x - window->x;
     int rel_y = y - window->y;
-    int last_x = window->width - 1;
-    int last_y = window->height - 1;
-    int near_left = rel_x <= 1;
-    int near_right = rel_x >= last_x - 1;
-    int near_top = rel_y <= 1;
-    int near_bottom = rel_y >= last_y - 1;
+    int near_left = rel_x <= 4;
+    int near_right = rel_x >= window->width - 5;
+    int near_top = rel_y <= 4;
+    int near_bottom = rel_y >= window->height - 5;
     *zone_x = 0;
     *zone_y = 0;
     if ((near_left || near_right) && (near_top || near_bottom)) {
@@ -427,10 +392,10 @@ static int resize_zone(const desktop_window_t *window, int x, int y, int *zone_x
         *zone_y = near_top ? -1 : 1;
         return 1;
     }
-    if (rel_x == 0) { *zone_x = -1; return 1; }
-    if (rel_x == last_x) { *zone_x = 1; return 1; }
-    if (rel_y == 0) { *zone_y = -1; return 1; }
-    if (rel_y == last_y) { *zone_y = 1; return 1; }
+    if (near_left) { *zone_x = -1; return 1; }
+    if (near_right) { *zone_x = 1; return 1; }
+    if (near_top) { *zone_y = -1; return 1; }
+    if (near_bottom) { *zone_y = 1; return 1; }
     return 0;
 }
 
@@ -438,10 +403,11 @@ static int update_drag(void) {
     desktop_window_t *window = &windows[drag_window];
     int old_x = window->x;
     int old_y = window->y;
-    int new_x = cursor_x - drag_grab_x;
-    int new_y = cursor_y - drag_grab_y;
-    if (new_x + window->width > video_columns) new_x = video_columns - window->width;
-    if (new_y + window->height > video_rows - 1) new_y = video_rows - window->height - 1;
+    int new_x = cursor_pixel_x - drag_grab_x;
+    int new_y = cursor_pixel_y - drag_grab_y;
+    if (new_x + window->width > video_pixel_width) new_x = video_pixel_width - window->width;
+    if (new_y + window->height > video_pixel_height - taskbar_height())
+        new_y = video_pixel_height - taskbar_height() - window->height;
     if (new_x < 0) new_x = 0;
     if (new_y < 0) new_y = 0;
     if (new_x == old_x && new_y == old_y) return 0;
@@ -460,22 +426,23 @@ static int update_resize(void) {
     int bottom = window->y + window->height;
     int changed;
     if (resize_x < 0) {
-        left = cursor_x - resize_grab_x;
+        left = cursor_pixel_x - resize_grab_x;
         if (left < 0) left = 0;
         if (left > right - DESKTOP_MIN_WIDTH) left = right - DESKTOP_MIN_WIDTH;
     } else if (resize_x > 0) {
-        right = cursor_x + resize_grab_x + 1;
+        right = cursor_pixel_x + resize_grab_x + 1;
         if (right < left + DESKTOP_MIN_WIDTH) right = left + DESKTOP_MIN_WIDTH;
-        if (right > video_columns) right = video_columns;
+        if (right > video_pixel_width) right = video_pixel_width;
     }
     if (resize_y < 0) {
-        top = cursor_y - resize_grab_y;
+        top = cursor_pixel_y - resize_grab_y;
         if (top < 0) top = 0;
         if (top > bottom - DESKTOP_MIN_HEIGHT) top = bottom - DESKTOP_MIN_HEIGHT;
     } else if (resize_y > 0) {
-        bottom = cursor_y + resize_grab_y + 1;
+        bottom = cursor_pixel_y + resize_grab_y + 1;
         if (bottom < top + DESKTOP_MIN_HEIGHT) bottom = top + DESKTOP_MIN_HEIGHT;
-        if (bottom > video_rows - 1) bottom = video_rows - 1;
+        if (bottom > video_pixel_height - taskbar_height())
+            bottom = video_pixel_height - taskbar_height();
     }
     changed = left != window->x || top != window->y ||
               right - left != window->width || bottom - top != window->height;
@@ -492,43 +459,52 @@ static int update_resize(void) {
 static void send_mouse_to_window(desktop_window_t *window, const mouse_event_t *event) {
     app_event_t app_event = {
         APP_EVENT_MOUSE, 0,
-        cursor_x - (window->x + 1), cursor_y - (window->y + 2),
+        cursor_pixel_x - (window->x + DESKTOP_BORDER),
+        cursor_pixel_y - (window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H),
         event->wheel, event->buttons
     };
     window->application->handle_event(&window->context, &app_event);
 }
 
 static void handle_window_press(const mouse_event_t *event) {
-    int index = top_window_at(cursor_x, cursor_y);
+    int index = top_window_at(cursor_pixel_x, cursor_pixel_y);
     desktop_window_t *window;
     int zone_x;
     int zone_y;
     if (index < 0) return;
     focus_window(index);
     window = &windows[index];
-    if (cursor_y == window->y + 1 && cursor_x == window->x + window->width - 3) {
+    /* chiudi: quadratino in alto a destra della barra titolo */
+    if (cursor_pixel_y >= window->y + DESKTOP_BORDER &&
+        cursor_pixel_y < window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H &&
+        cursor_pixel_x >= window->x + window->width - DESKTOP_BORDER - 36 &&
+        cursor_pixel_x < window->x + window->width - DESKTOP_BORDER - 12) {
         close_window(index);
-    } else if (cursor_y == window->y + 1 && cursor_x == window->x + window->width - 5) {
+    } else if (cursor_pixel_y >= window->y + DESKTOP_BORDER &&
+               cursor_pixel_y < window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H &&
+               cursor_pixel_x >= window->x + window->width - DESKTOP_BORDER - 58 &&
+               cursor_pixel_x < window->x + window->width - DESKTOP_BORDER - 34) {
         minimize_window(index);
-    } else if (resize_zone(window, cursor_x, cursor_y, &zone_x, &zone_y)) {
+    } else if (resize_zone(window, cursor_pixel_x, cursor_pixel_y, &zone_x, &zone_y)) {
         resize_window = index;
         resize_x = zone_x;
         resize_y = zone_y;
-        resize_grab_x = zone_x < 0 ? cursor_x - window->x
-                                   : window->x + window->width - 1 - cursor_x;
-        resize_grab_y = zone_y < 0 ? cursor_y - window->y
-                                   : window->y + window->height - 1 - cursor_y;
-    } else if (cursor_y == window->y + 1) {
+        resize_grab_x = zone_x < 0 ? cursor_pixel_x - window->x
+                                   : window->x + window->width - 1 - cursor_pixel_x;
+        resize_grab_y = zone_y < 0 ? cursor_pixel_y - window->y
+                                   : window->y + window->height - 1 - cursor_pixel_y;
+    } else if (cursor_pixel_y >= window->y + DESKTOP_BORDER &&
+               cursor_pixel_y < window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H) {
         drag_window = index;
-        drag_grab_x = cursor_x - window->x;
-        drag_grab_y = cursor_y - window->y;
+        drag_grab_x = cursor_pixel_x - window->x;
+        drag_grab_y = cursor_pixel_y - window->y;
     } else {
         send_mouse_to_window(window, event);
     }
 }
 
 static void handle_press(const mouse_event_t *event) {
-    int task = taskbar_hit_test(cursor_x, cursor_y, video_rows, windows, window_count);
+    int task = taskbar_hit_test(cursor_pixel_x, cursor_pixel_y, 0, windows, window_count);
     if (task == -2) {
         launcher_set_open(!launcher_is_open());
         drag_window = -1;
@@ -542,7 +518,7 @@ static void handle_press(const mouse_event_t *event) {
         return;
     }
     if (launcher_is_open()) {
-        int item = launcher_hit_test(cursor_x, cursor_y);
+        int item = launcher_hit_test(cursor_pixel_x, cursor_pixel_y);
         if (item >= 0) { select_launcher_item(item); return; }
         if (item == -2) { launcher_set_open(0); return; }
         launcher_set_open(0);
@@ -558,14 +534,18 @@ static int handle_mouse_event(const mouse_event_t *event) {
     int redraw = 0;
     if (next_x < 0) next_x = 0;
     if (next_y < 0) next_y = 0;
-    if (next_x >= video_columns * VIDEO_CELL_WIDTH) next_x = video_columns * VIDEO_CELL_WIDTH - 1;
-    if (next_y >= video_rows * VIDEO_CELL_HEIGHT) next_y = video_rows * VIDEO_CELL_HEIGHT - 1;
+    if (next_x >= video_pixel_width) next_x = video_pixel_width - 1;
+    if (next_y >= video_pixel_height) next_y = video_pixel_height - 1;
     cursor_pixel_x = next_x;
     cursor_pixel_y = next_y;
-    cursor_x = cursor_pixel_x / VIDEO_CELL_WIDTH;
-    cursor_y = cursor_pixel_y / VIDEO_CELL_HEIGHT;
     if (drag_window >= 0 && left_down) redraw |= update_drag();
     if (resize_window >= 0 && left_down) redraw |= update_resize();
+    if (!left_down && (drag_window >= 0 || resize_window >= 0)) {
+        /* fine drag/resize: ridisegno completo per ripulire qualsiasi residuo */
+        drag_window = -1;
+        resize_window = -1;
+        redraw |= REDRAW_FULL;
+    }
     if (pressed) {
         redraw |= REDRAW_FULL;
         handle_press(event);
@@ -574,8 +554,8 @@ static int handle_mouse_event(const mouse_event_t *event) {
         drag_window = -1;
         resize_window = -1;
     }
-    if (event->wheel && !launcher_is_open()) {
-        int target = top_window_at(cursor_x, cursor_y);
+    if (event->wheel && !launcher_is_open()) {  /* (release gestito sopra) */
+        int target = top_window_at(cursor_pixel_x, cursor_pixel_y);
         if (target < 0) target = active_window;
         if (target >= 0 && windows[target].open) {
             send_mouse_to_window(&windows[target], event);
@@ -606,6 +586,7 @@ static void present_frame(int redraw) {
     } else {
         dirty_window = -1;
         draw_cursor();
+        video_present();
     }
 }
 
@@ -646,47 +627,9 @@ static void handle_key(int key) {
     }
 }
 
-int desktop_is_active(void) {
-    return desktop_active;
-}
-
-int desktop_stop(void) {
-    if (!desktop_active) return 0;
-    desktop_active = 0;
-    return 1;
-}
-
-int desktop_reload(void) {
-    if (!desktop_active) return 0;
-    launcher_set_open(0);
-    clamp_to_screen();
-    drag_window = -1;
-    resize_window = -1;
-    dirty_window = -1;
-    draw_desktop();
-    return 1;
-}
-
-int desktop_read_char(void) {
-    if (!desktop_active) return keyboard_read_char();
-    while (desktop_active) {
-        int redraw = 0;
-        int activity = pump_mouse(&redraw);
-        int key;
-        if (activity) present_frame(redraw);
-        key = keyboard_try_read_char();
-        if (key >= 0) {
-            draw_desktop();
-            return key;
-        }
-        if (!activity) cpu_relax();
-    }
-    return -1;
-}
-
 int desktop_run(void) {
     if (desktop_active) return -1;
-    if (video_columns < 36 || video_rows < 16) return -1;
+    if (video_pixel_width < DESKTOP_MIN_WIDTH || video_pixel_height < DESKTOP_MIN_HEIGHT) return -1;
     for (int index = 0; index < DESKTOP_MAX_WINDOWS; index++) {
         windows[index].open = 0;
         windows[index].minimized = 0;
@@ -694,10 +637,8 @@ int desktop_run(void) {
     window_count = 0;
     z_count = 0;
     active_window = -1;
-    cursor_x = video_columns / 2;
-    cursor_y = (video_rows - 1) / 2;
-    cursor_pixel_x = cursor_x * VIDEO_CELL_WIDTH;
-    cursor_pixel_y = cursor_y * VIDEO_CELL_HEIGHT;
+    cursor_pixel_x = video_pixel_width / 2;
+    cursor_pixel_y = (video_pixel_height - taskbar_height()) / 2;
     cursor_buttons = 0;
     cursor_background_valid = 0;
     drag_window = -1;

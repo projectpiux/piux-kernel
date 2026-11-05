@@ -5,5 +5,6 @@
 
 void taskbar_draw(const desktop_window_t *windows, int count, int active_window);
 int taskbar_hit_test(int x, int y, int rows, const desktop_window_t *windows, int count);
+int taskbar_height(void);
 
 #endif

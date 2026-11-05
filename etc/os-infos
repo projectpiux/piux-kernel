@@ -1,11 +1,11 @@
 
                         
           XX$$$&           Name: Piux
-         X$XX&$$X++        Version: Rolling release 211026
+         X$XX&$$X++        Version: Rolling release
         $$&.$$&            Bootloader: GRUB
          &&&$..:           GitHub: github.com/projectpiux/piux-kernel
-        ++x$&&..+          WM: pwm 1.1
-       XX&&&&;..X          DE: pde 1.0.0 (BETA!)
+        ++x$&&..+          UI: PDE 2
+       XX&&&&;..X          
       &&&&$$;..:&&      
       &&&x+:..:$&       
       &&X+...x&&          

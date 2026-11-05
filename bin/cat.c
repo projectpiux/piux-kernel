@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include "../tui/wm/wm.h"
 #include "ext2.h"
 
 typedef void (*vga_puts_t)(const char *);
@@ -44,5 +43,4 @@ void cmd_cat(const char *filename, vga_puts_t vga_puts, vga_putc_t vga_putc) {
     if (bytes == 0) vga_puts("(empty file)\n");
     else if (cat_buffer[bytes - 1] != '\n') vga_putc('\n');
 
-    if (pwm_command_is_active()) pwm_command_refresh();
 }

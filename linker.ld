@@ -21,9 +21,6 @@ SECTIONS
         _os_infos_start = .;
         KEEP(*(SORT_BY_NAME(.os_infos)))
         _os_infos_end = .;
-        _pwm_info_start = .;
-        KEEP(*(SORT_BY_NAME(.pwm_info)))
-        _pwm_info_end = .;
     }
     
     .data ALIGN(4K) :

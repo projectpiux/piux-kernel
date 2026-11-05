@@ -24,11 +24,10 @@ typedef struct __attribute__((packed)) {
     uint32_t destination_ip;
 } ip_header_t;
 
-/* Defaults match QEMU's `-netdev user` built-in DHCP range, useful until a real DHCP client exists. */
-static uint32_t local_ip = 0x0A00020FU;      /* 10.0.2.15 */
-static uint32_t local_netmask = 0xFFFFFF00U; /* 255.255.255.0 */
-static uint32_t local_gateway = 0x0A000202U; /* 10.0.2.2 */
-static uint32_t local_dns = 0x0A000203U;     /* 10.0.2.3 */
+static uint32_t local_ip = 0x0A00020FU;      
+static uint32_t local_netmask = 0xFFFFFF00U; 
+static uint32_t local_gateway = 0x0A000202U; 
+static uint32_t local_dns = 0x0A000203U;     
 static uint16_t next_identification = 1;
 
 void ip_set_config(uint32_t new_ip, uint32_t new_netmask, uint32_t new_gateway) {

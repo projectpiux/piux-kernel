@@ -5,7 +5,8 @@ OBJCOPY  := objcopy
 
 CFLAGS   := -m32 -std=gnu11 -ffreestanding -fno-pic -fno-pie \
             -fno-stack-protector -nostdlib -Wall -Wextra \
-            -Werror=implicit-function-declaration -march=i386 -O2
+            -Werror=implicit-function-declaration -march=i386 -O2 \
+            -fno-asynchronous-unwind-tables -fno-unwind-tables
 ASFLAGS  := -f elf32
 LDFLAGS  := -T linker.ld -m elf_i386 -nostdlib
 
@@ -13,7 +14,6 @@ BUILD_DIR := build
 KERNEL    := $(BUILD_DIR)/kernel.elf
 ISO       := piux.iso
 DISK      := $(BUILD_DIR)/ext2.img
-PWM_INFO  := $(BUILD_DIR)/pwm-info.o
 CURSOR_RAW := $(BUILD_DIR)/cursor.rgba
 CURSOR_OBJ := $(BUILD_DIR)/cursor.o
 
@@ -22,20 +22,24 @@ KERNEL_ASM_OBJS := $(BUILD_DIR)/kernel/syscall_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/gdt_flush.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/interrupt_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/context.o
-BIN_OBJS    := $(patsubst bin/%.c,$(BUILD_DIR)/bin/%.o,$(wildcard bin/*.c))
-TUI_OBJS    := $(patsubst tui/installer/%.c,$(BUILD_DIR)/tui/installer/%.o,$(wildcard tui/installer/*.c))
-WM_OBJS     := $(patsubst tui/wm/%.c,$(BUILD_DIR)/tui/wm/%.o,$(wildcard tui/wm/*.c))
+# Subsystems shipped as loadable modules (see kernel/module_abi.h).
+MODULES     := vfs commands net installer
+MODULE_FLAGS := $(CFLAGS) -fno-asynchronous-unwind-tables
+MOD_DIR     := $(BUILD_DIR)/modules
+MODULE_CORE_RELEASE := piux-1.0
 USER_DESKTOP_OBJS := $(patsubst user/desktop/%.c,$(BUILD_DIR)/user/desktop/%.o,$(wildcard user/desktop/*.c))
 USER_APP_SOURCES := $(wildcard user/apps/*.c) $(wildcard user/apps/*/*.c)
 USER_APP_OBJS := $(patsubst user/apps/%.c,$(BUILD_DIR)/user/apps/%.o,$(USER_APP_SOURCES))
-USER_OBJS := $(USER_DESKTOP_OBJS) $(USER_APP_OBJS)
+USER_API_OBJ := $(BUILD_DIR)/user/lib/api.o $(BUILD_DIR)/user/lib/pixelfont.o
+USER_PROGRAMS := $(BUILD_DIR)/user/hello.elf $(BUILD_DIR)/user/isolation_test.elf $(BUILD_DIR)/user/desktop.elf
 
 LOGOS      := $(wildcard kernel/logo/ascii/*/*)
 LOGO_OBJS  := $(patsubst kernel/logo/ascii/%,$(BUILD_DIR)/logo-%.o,$(LOGOS))
 
-OBJECTS := $(BUILD_DIR)/bootx.o $(KERNEL_OBJS) $(KERNEL_ASM_OBJS) $(BIN_OBJS) $(TUI_OBJS) $(WM_OBJS) $(USER_OBJS) $(LOGO_OBJS) $(BUILD_DIR)/os-infos.o $(PWM_INFO) $(CURSOR_OBJ)
+OBJECTS := $(BUILD_DIR)/bootx.o $(KERNEL_OBJS) $(KERNEL_ASM_OBJS) $(LOGO_OBJS) $(BUILD_DIR)/os-infos.o
+MODULE_FILES := $(patsubst %,$(MOD_DIR)/%.mod,$(MODULES))
 
-all: $(ISO)
+all: $(ISO) $(MODULE_FILES) $(USER_PROGRAMS)
 
 $(BUILD_DIR)/bootx.o: boot/bootx.asm
 	@mkdir -p $(dir $@)
@@ -43,7 +47,7 @@ $(BUILD_DIR)/bootx.o: boot/bootx.asm
 
 $(BUILD_DIR)/kernel/%.o: kernel/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -c -o $@ $<
 
 $(BUILD_DIR)/kernel/%.o: kernel/%.asm
 	@mkdir -p $(dir $@)
@@ -57,27 +61,120 @@ $(BUILD_DIR)/tui/installer/%.o: tui/installer/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I kernel -I bin -I tui/installer -c -o $@ $<
 
-$(BUILD_DIR)/tui/wm/%.o: tui/wm/%.c
+# ---------------------------------------------------------------------------
+# Loadable modules
+# ---------------------------------------------------------------------------
+# Each module is compiled with its own PIUX_MODULE_<NAME> guard (so the
+# headers provide compile-time interface functions) and linked with `ld -r`
+# into a relocatable object. The loader takes care of resolution at runtime.
+
+MODULE_CORE_RELEASE := $(shell cat build/kernel.release 2>/dev/null || printf piux-1.0)
+
+$(MOD_DIR)/%.mod: FORCE
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I kernel -I bin -I tui/wm -c -o $@ $<
+	@$(MAKE) --no-print-directory $(MOD_DIR)/$*.mod.stage
+
+$(MOD_DIR)/vfs.mod.stage: kernel/vfs.c $(wildcard kernel/*.h) FORCE
+	@mkdir -p $(dir $@)
+	$(CC) $(MODULE_FLAGS) -DPIUX_MODULE_VFS -DPIUX_MODULE_VERSION=\"1.0.0\" \
+	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel \
+	  -c -o $(MOD_DIR)/vfs.o $<
+	$(LD) -r -m elf_i386 -o $(MOD_DIR)/vfs.mod $(MOD_DIR)/vfs.o
+	@touch $@
+
+$(MOD_DIR)/commands.mod.stage: $(BUILD_DIR)/modules/commands-src.stamp FORCE
+	$(LD) -r -m elf_i386 -o $(MOD_DIR)/commands.mod $(wildcard $(MOD_DIR)/commands/*.o)
+	@touch $@
+
+$(BUILD_DIR)/modules/commands-src.stamp: $(wildcard bin/*.c) $(wildcard kernel/*.h) FORCE
+	@mkdir -p $(MOD_DIR)/commands
+	@rm -f $(MOD_DIR)/commands/*.o
+	@for source in $(wildcard bin/*.c); do \
+	  $(CC) $(MODULE_FLAGS) -DPIUX_MODULE_COMMANDS -DPIUX_MODULE_VERSION=\"1.0.0\" \
+	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel -I bin \
+	    -c -o $(MOD_DIR)/commands/$$(basename $$source .c).o $$source || exit 1; \
+	done
+	@touch $@
+
+$(MOD_DIR)/net.mod.stage: $(wildcard kernel/arp.c kernel/ip.c kernel/icmp.c kernel/udp.c kernel/tcp.c kernel/dhcp.c kernel/eth.c kernel/net.c) $(wildcard kernel/*.h) FORCE
+	@mkdir -p $(MOD_DIR)/net
+	@rm -f $(MOD_DIR)/net/*.o
+	@for source in arp ip icmp udp tcp dhcp eth net; do \
+	  $(CC) $(MODULE_FLAGS) -DPIUX_MODULE_NET -DPIUX_MODULE_VERSION=\"1.0.0\" \
+	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel \
+	    -c -o $(MOD_DIR)/net/$$source.o kernel/$$source.c || exit 1; \
+	done
+	$(LD) -r -m elf_i386 -o $(MOD_DIR)/net.mod $(MOD_DIR)/net/arp.o $(MOD_DIR)/net/ip.o \
+	  $(MOD_DIR)/net/icmp.o $(MOD_DIR)/net/udp.o $(MOD_DIR)/net/tcp.o \
+	  $(MOD_DIR)/net/dhcp.o $(MOD_DIR)/net/eth.o $(MOD_DIR)/net/net.o
+	@touch $@
+
+$(MOD_DIR)/installer.mod.stage: tui/installer/installer.c $(wildcard kernel/*.h) FORCE
+	@mkdir -p $(dir $@)
+	$(CC) $(MODULE_FLAGS) -DPIUX_MODULE_INSTALLER -DPIUX_MODULE_VERSION=\"1.0.0\" \
+	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel -I tui/installer \
+	  -c -o $(MOD_DIR)/installer.o $<
+	$(LD) -r -m elf_i386 -o $(MOD_DIR)/installer.mod $(MOD_DIR)/installer.o
+	@touch $@
+
+modules: $(MODULE_FILES)
+
+.PHONY: FORCE modules
+FORCE:
 
 $(BUILD_DIR)/user/desktop/%.o: user/desktop/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I kernel -I bin -I user/desktop -I user/apps -c -o $@ $<
+	$(CC) $(CFLAGS) -I user/lib -I user/desktop -I user/apps -c -o $@ $<
 
 $(BUILD_DIR)/user/apps/%.o: user/apps/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I kernel -I bin -I user/desktop -I user/apps -c -o $@ $<
+	$(CC) $(CFLAGS) -I user/lib -I user/desktop -I user/apps -c -o $@ $<
+
+$(BUILD_DIR)/user/lib/%.o: user/lib/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I user/lib -I user/desktop -c -o $@ $<
+
+$(BUILD_DIR)/user/hello.o: user/hello.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/user/hello.elf: $(BUILD_DIR)/user/hello.o user/user.ld
+	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $<
+
+$(BUILD_DIR)/user/isolation_test.o: user/isolation_test.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/user/isolation_test.elf: $(BUILD_DIR)/user/isolation_test.o user/user.ld
+	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $<
+
+$(BUILD_DIR)/user/desktop.elf: $(USER_DESKTOP_OBJS) $(USER_APP_OBJS) $(USER_API_OBJ) $(CURSOR_OBJ) user/user.ld
+	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(USER_DESKTOP_OBJS) $(USER_APP_OBJS) $(USER_API_OBJ) $(CURSOR_OBJ)
+
+user-programs: $(USER_PROGRAMS)
+
+install-user-programs: $(DISK) $(USER_PROGRAMS) $(MODULE_FILES)
+	debugfs -w -R "rm /desktop.elf" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/user/desktop.elf /desktop.elf" $(DISK)
+	for module in $(MODULE_FILES); do \
+	  debugfs -w -R "mkdir /lib" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "mkdir /lib/modules" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "rm /lib/modules/$$(basename $$module)" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "write $$module /lib/modules/$$(basename $$module)" $(DISK); \
+	done
+
+install-modules: $(DISK) $(MODULE_FILES)
+	for module in $(MODULE_FILES); do \
+	  debugfs -w -R "mkdir /lib" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "mkdir /lib/modules" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "rm /lib/modules/$$(basename $$module)" $(DISK) >/dev/null 2>&1 || true; \
+	  debugfs -w -R "write $$module /lib/modules/$$(basename $$module)" $(DISK); \
+	done
 
 $(BUILD_DIR)/os-infos.o: etc/os-infos
 	@mkdir -p $(dir $@)
 	$(OBJCOPY) -I binary -O elf32-i386 -B i386 \
 	  --rename-section .data=.os_infos $< $@
-
-$(PWM_INFO): etc/pwm-info
-	@mkdir -p $(dir $@)
-	$(OBJCOPY) -I binary -O elf32-i386 -B i386 \
-	  --rename-section .data=.pwm_info,alloc,load,readonly,data,contents $< $@
 
 $(CURSOR_RAW): kernel/logo/cur/arrow.png
 	@mkdir -p $(dir $@)
@@ -105,7 +202,7 @@ $(DISK):
 	dd if=/dev/zero of=$@ bs=1M count=32 status=none
 	mke2fs -q -t ext2 -F $@
 
-run: $(ISO) $(DISK)
+run: $(ISO) install-user-programs
 	qemu-system-i386 -cdrom $(ISO) -drive file=$(DISK),format=raw,if=ide -device rtl8139,netdev=n0 -netdev user,id=n0 -m 512M -vga std -display gtk,zoom-to-fit=off
 
 debug: $(KERNEL)
@@ -115,4 +212,4 @@ debug: $(KERNEL)
 clean:
 	rm -rf $(BUILD_DIR) $(ISO)
 
-.PHONY: all run debug clean
+.PHONY: all run debug clean user-programs install-user-programs install-modules

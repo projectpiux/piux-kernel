@@ -31,11 +31,9 @@ For example:
 
 [STARTUP]
 pde
-# pwm
-# I don't want to start pwm at boot, so I've commented it out.
 ```
 
-In this example, `pde` will be started automatically, while `pwm` will be ignored because its entry is commented out.
+In this example, `pde` will be started automatically.
 
 You can use comments to document your configuration or temporarily disable components without deleting their entries.
 

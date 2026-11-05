@@ -114,43 +114,43 @@ int keyboard_try_read_char(void) {
             if (scancode == 0x53) return KEY_DELETE;
             return -1;
         }
-        
+
         if (scancode & 0x80) {
             uint8_t released = scancode & ~0x80;
-            
+
             if (released == 0x2A || released == 0x36) {
                 shift_pressed = 0;
                 return -1;
             }
-            
+
             if (released == 0x1D) {
                 ctrl_pressed = 0;
                 return -1;
             }
-            
+
             if (released == 0x38) {
                 alt_pressed = 0;
                 return -1;
             }
-            
+
             return -1;
         }
-        
+
         if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
             return -1;
         }
-        
+
         if (scancode == 0x1D) {
             ctrl_pressed = 1;
             return -1;
         }
-        
+
         if (scancode == 0x38) {
             alt_pressed = 1;
             return -1;
         }
-        
+
         if (ctrl_pressed) {
             if (scancode == 0x10) return 17;
             if (scancode == 0x2E) return 3;
@@ -161,7 +161,7 @@ int keyboard_try_read_char(void) {
             if (scancode == 0x17) return 9;
             if (scancode == 0x23) return 16;
         }
-        
+
         if (scancode < 60) {
             const char *table = keyboard_lookup_table(shift_pressed);
             char ascii = table[scancode];
@@ -179,7 +179,7 @@ extern void net_poll(void);
 int keyboard_read_char(void) {
     int character;
     while ((character = keyboard_try_read_char()) < 0) {
-        net_poll(); /* answer ARP/ICMP passively while idle at the prompt */
+        net_poll(); 
     }
     return character;
 }

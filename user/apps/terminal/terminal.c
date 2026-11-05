@@ -1,15 +1,14 @@
 #include <stdint.h>
 #include "terminal.h"
-#include "../../desktop/desktop.h"
-#include "../../../kernel/auth.h"
-#include "../../../kernel/ext2.h"
-#include "../../../kernel/keyboard.h"
-#include "../../../kernel/shell.h"
-#include "../../../kernel/video.h"
+#include "../../lib/api.h"
 
-#define TERMINAL_MAX_LINES 48
-#define TERMINAL_LINE_LENGTH 96
+#define TERMINAL_MAX_LINES 200
+#define TERMINAL_LINE_LENGTH 120
 #define TERMINAL_MAX_INPUT 80
+
+/* compact text metrics derived from the actual framebuffer font */
+#define PIXEL_CHAR_ADVANCE (PIXFONT_WIDTH + PIXFONT_SCALE)
+#define PIXEL_LINE_HEIGHT  (PIXFONT_HEIGHT + 2)
 
 typedef struct {
     char lines[TERMINAL_MAX_LINES][TERMINAL_LINE_LENGTH];
@@ -19,7 +18,6 @@ typedef struct {
     int line_width;
 } terminal_state_t;
 
-extern ext2_filesystem_t fs;
 static terminal_state_t terminal;
 static terminal_state_t *output_terminal;
 
@@ -85,10 +83,11 @@ static void terminal_puts(const char *text) {
 }
 
 static void terminal_prompt(void) {
-    const char *username = auth_current_username();
-    terminal_puts(username[0] ? username : "piux");
+    syscall_auth_info_t info = {0};
+    user_get_auth_info(&info);
+    terminal_puts(info.username[0] ? info.username : "piux");
     terminal_puts(" ");
-    terminal_puts(ext2_is_mounted() ? fs.current_path : "~");
+    terminal_puts(info.current_path[0] ? info.current_path : "~");
     terminal_puts("> ");
 }
 
@@ -98,7 +97,7 @@ static int terminal_initialize(app_context_t *context) {
     state->line_count = 0;
     state->input_length = 0;
     state->input[0] = '\0';
-    state->line_width = context->content.width;
+    state->line_width = (context->content.width - 6) / PIXEL_CHAR_ADVANCE;
     if (state->line_width >= TERMINAL_LINE_LENGTH) state->line_width = TERMINAL_LINE_LENGTH - 1;
     if (state->line_width < 1) return -1;
     output_terminal = state;
@@ -112,20 +111,24 @@ static void terminal_render(app_context_t *context) {
     terminal_state_t *state = context->state;
     int visible;
     int first;
+    int chars_per_line;
     if (!state) return;
-    state->line_width = context->content.width;
-    if (state->line_width >= TERMINAL_LINE_LENGTH) state->line_width = TERMINAL_LINE_LENGTH - 1;
-    visible = context->content.height;
+    /* metrica dal rect pixel reale */
+    chars_per_line = (context->content.width - 6) / PIXEL_CHAR_ADVANCE;
+    if (chars_per_line >= TERMINAL_LINE_LENGTH) chars_per_line = TERMINAL_LINE_LENGTH - 1;
+    state->line_width = chars_per_line;
+    visible = (context->content.height - 6) / PIXEL_LINE_HEIGHT;
     if (visible <= 0) return;
+    /* pulisci TUTTO il contenuto in pixel, poi disegna ogni riga col font pixel */
+    pixel_fill_rect(context->content.x, context->content.y,
+                    context->content.width, context->content.height, 0x000000u);
     first = state->line_count - visible;
     if (first < 0) first = 0;
     for (int row = 0; row < visible; row++) {
         int line = first + row;
+        int baseline = context->content.y + 2 + row * PIXEL_LINE_HEIGHT;
         if (line >= state->line_count) break;
-        for (int column = 0; state->lines[line][column] &&
-             column < context->content.width; column++)
-            video_put_cell(context->content.x + column, context->content.y + row,
-                           state->lines[line][column], 0x07);
+        pixel_draw_text(context->content.x + 3, baseline, state->lines[line], 0xE0E0E0u);
     }
 }
 
@@ -138,7 +141,8 @@ static int input_is_clear(const char *input) {
     int start = 0;
     if (input[0] == 's' && input[1] == 'u' && input[2] == 'd' &&
         input[3] == 'o' && input[4] == ' ') {
-        if (!auth_current_user_is_sudoer()) return 0;
+        syscall_auth_info_t info = {0};
+        if (user_get_auth_info(&info) < 0 || !info.is_sudoer) return 0;
         start = 5;
     }
     return input[start] == 'c' && input[start + 1] == 'l' &&
@@ -149,12 +153,15 @@ static int input_is_clear(const char *input) {
 
 static void terminal_submit(void) {
     char command[TERMINAL_MAX_INPUT];
+    char output[1024];
     copy_text(command, terminal.input, sizeof(command));
     terminal_putc('\n');
     if (input_is_clear(command)) terminal_clear_output();
     terminal.input_length = 0;
     terminal.input[0] = '\0';
-    shell_execute_command_line(command, terminal_puts, terminal_putc);
+    output[0] = '\0';
+    user_shell_execute(command, output, sizeof(output));
+    terminal_puts(output);
     terminal_prompt();
 }
 

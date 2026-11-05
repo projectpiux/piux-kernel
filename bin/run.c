@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include "../kernel/elf.h"
 #include "../kernel/process.h"
 
 typedef void (*vga_puts_t)(const char*);
@@ -22,7 +21,6 @@ static void print_int(int value, vga_putc_t putc) {
 }
 
 void cmd_run(const char *filename, vga_puts_t vga_puts, vga_putc_t vga_putc) {
-    uint32_t entry_point;
     int status;
 
     if (*filename == '\0') {
@@ -30,12 +28,11 @@ void cmd_run(const char *filename, vga_puts_t vga_puts, vga_putc_t vga_putc) {
         return;
     }
 
-    if (elf_load(filename, &entry_point) < 0) {
-        vga_puts("run: not a valid ELF32 executable\n");
+    status = process_exec(filename);
+    if (status < 0) {
+        vga_puts("run: invalid ELF32 executable or insufficient memory\n");
         return;
     }
-
-    status = process_exec(entry_point, PROCESS_USER_STACK_TOP);
     vga_puts("Program exited with status ");
     print_int(status, vga_putc);
     vga_putc('\n');

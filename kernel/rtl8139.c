@@ -55,7 +55,7 @@ int rtl8139_init(void) {
     for (int index = 0; index < 6; index++) mac_address[index] = inb(io_base + REG_MAC0 + index);
 
     outl(io_base + REG_RBSTART, (uint32_t)(uintptr_t)rx_buffer);
-    outw(io_base + REG_IMR, 0x0000); /* pure polling driver, no ISR installed for this PCI IRQ line */
+    outw(io_base + REG_IMR, 0x0000); 
     outl(io_base + REG_RCR, 0x0000000F);
     outb(io_base + REG_CMD, CMD_RX_ENABLE | CMD_TX_ENABLE);
 

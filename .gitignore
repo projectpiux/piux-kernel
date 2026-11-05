@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+*.iso
+*.img
+*.o
+*.mod
+*.elf
+
+# Editor / local files
+.vscode/
+.DS_Store
+*.swp
+*.tmp
+
+# Logs
+*.log

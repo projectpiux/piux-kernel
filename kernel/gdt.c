@@ -48,7 +48,9 @@ typedef struct {
 static gdt_entry_t entries[6];
 static tss_t task_state __attribute__((aligned(16)));
 extern void gdt_flush(uint32_t address);
-extern char stack_top;
+
+static uint8_t user_trap_stack[8192] __attribute__((aligned(16)));
+static const uint8_t *user_trap_stack_top = user_trap_stack + sizeof(user_trap_stack);
 
 static void set_entry(int index, uint32_t base, uint32_t limit, uint8_t access, uint8_t granularity) {
     entries[index].limit_low = limit & 0xffff;
@@ -69,7 +71,7 @@ void gdt_init(void) {
     set_entry(3, 0, 0xffffffff, 0xfa, 0xcf);
     set_entry(4, 0, 0xffffffff, 0xf2, 0xcf);
     set_entry(5, (uint32_t)(uintptr_t)&task_state, sizeof(task_state) - 1, 0x89, 0x40);
-    task_state.esp0 = (uint32_t)(uintptr_t)&stack_top;
+    task_state.esp0 = (uint32_t)(uintptr_t)user_trap_stack_top;
     task_state.ss0 = 0x10;
     task_state.iomap_base = sizeof(task_state);
     pointer.base = (uint32_t)(uintptr_t)entries;

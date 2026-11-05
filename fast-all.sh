@@ -40,7 +40,7 @@ build_piux() {
 
 create_disk() {
     echo "[*] Creating disk image..."
-    make "$DISK"
+    make install-user-programs
 }
 
 start_vm() {
@@ -79,6 +79,7 @@ while true; do
                 echo "[!] Missing $DISK or $ISO. Build Piux first with option 3."
                 continue
             fi
+            make install-user-programs
             start_vm
             ;;
         3)

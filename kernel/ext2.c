@@ -362,18 +362,28 @@ int ext2_find_inode_in_dir(uint32_t dir_inode, const char *filename) {
 }
 
 int ext2_read_file(uint32_t inode_num, char *buffer, uint32_t size) {
+    return ext2_read_file_range(inode_num, 0, buffer, size);
+}
+
+int ext2_read_file_range(uint32_t inode_num, uint32_t offset, char *buffer, uint32_t size) {
     ext2_inode_t inode;
     uint32_t wanted;
     uint32_t bytes_read = 0;
     if (buffer == 0 || ext2_read_inode(inode_num, &inode) < 0) return -1;
-    wanted = min_u32(size, inode.size);
+    if (offset >= inode.size) return 0;
+    wanted = min_u32(size, inode.size - offset);
     while (bytes_read < wanted) {
         uint32_t physical;
-        uint32_t offset = bytes_read % fs.block_size;
-        uint32_t amount = min_u32(wanted - bytes_read, fs.block_size - offset);
-        if (inode_block(&inode, bytes_read / fs.block_size, &physical) < 0 || physical == 0 ||
-            ext2_read_block(physical, block_buffer) < 0) return -1;
-        memcpy_safe(buffer + bytes_read, block_buffer + offset, amount);
+        uint32_t file_offset = offset + bytes_read;
+        uint32_t block_offset = file_offset % fs.block_size;
+        uint32_t amount = min_u32(wanted - bytes_read, fs.block_size - block_offset);
+        if (inode_block(&inode, file_offset / fs.block_size, &physical) < 0) return -1;
+        if (physical == 0) {
+            memset_safe(buffer + bytes_read, 0, amount);
+        } else {
+            if (ext2_read_block(physical, block_buffer) < 0) return -1;
+            memcpy_safe(buffer + bytes_read, block_buffer + block_offset, amount);
+        }
         bytes_read += amount;
     }
     return (int)bytes_read;
@@ -595,6 +605,11 @@ int ext2_read_file_by_path(const char *path, char *buffer, uint32_t size) {
     return inode < 0 ? -1 : ext2_read_file((uint32_t)inode, buffer, size);
 }
 
+int ext2_read_file_range_by_path(const char *path, uint32_t offset, char *buffer, uint32_t size) {
+    int inode = ext2_find_inode_by_path(path);
+    return inode < 0 ? -1 : ext2_read_file_range((uint32_t)inode, offset, buffer, size);
+}
+
 int ext2_print_dir_by_path(const char *path, void (*vga_puts)(const char*)) {
     int inode = ext2_find_inode_by_path(path);
     if (inode < 0) return -1;
@@ -692,8 +707,6 @@ static int remove_directory_entry(ext2_inode_t *directory, const char *name) {
     return -1;
 }
 
-/* Frees the inode's data blocks (direct, single and double indirect) and clears its
-   directory entry; the entry slot and inode/block bitmap bits become reusable. */
 int ext2_delete_file_by_path(const char *path) {
     char parent_path[256];
     char name[EXT2_MAX_NAME_LEN + 1];

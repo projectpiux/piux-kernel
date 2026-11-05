@@ -5,9 +5,6 @@ global process_context_save
 global process_context_restore
 global process_enter_user_mode
 
-; int process_context_save(process_context_t *context)
-; Returns 0 on the initial call, or the value passed to
-; process_context_restore when resumed later.
 process_context_save:
     mov eax, [esp+4]
     mov ecx, [esp]
@@ -18,10 +15,12 @@ process_context_save:
     mov [eax+12], ebx
     mov [eax+16], esi
     mov [eax+20], edi
+    pushfd
+    pop edx
+    mov [eax+24], edx
     xor eax, eax
     ret
 
-; void process_context_restore(process_context_t *context, int value)
 process_context_restore:
     mov eax, [esp+4]
     mov edx, [esp+8]
@@ -31,10 +30,14 @@ process_context_restore:
     mov edi, [eax+20]
     mov ecx, [eax]
     mov esp, [eax+4]
+    mov eax, [eax+24]
+    push eax
+    popfd
+    and edx, 0xffff8fff
+    or edx, 0x2
     mov eax, edx
     jmp ecx
 
-; void process_enter_user_mode(uint32_t entry, uint32_t user_stack)
 process_enter_user_mode:
     mov eax, [esp+4]
     mov ecx, [esp+8]

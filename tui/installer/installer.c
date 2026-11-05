@@ -1,9 +1,13 @@
 #include <stdint.h>
+
+#if defined(PIUX_MODULE_INSTALLER)
+
 #include "ext2.h"
 #include "keyboard.h"
 #include "installer.h"
 #include "auth.h"
 #include "video.h"
+#include "piux_module.h"
 
 #define INSTALLER_TOTAL_STEPS   3
 #define INSTALLER_BOX_MIN_WIDTH 52
@@ -333,7 +337,7 @@ static int create_system_tree(void) {
     if (report_step("/.config/disk.conf",
             write_config("/.config/disk.conf", "device=/dev/hda\nfilesystem=ext2\nmountpoint=/\n")) < 0) return -1;
     if (report_step("/sbin/init",
-            write_config("/sbin/init", "# Piux init: a basic init file.\n# Use hashtags for comments or disabled commands.\n# Enjoy!\n\n[STARTUP]\npde\n# pwm\n\n")) < 0) return -1;
+            write_config("/sbin/init", "# Piux init: a basic init file.\n# Use hashtags for comments or disabled commands.\n# Enjoy!\n\n[STARTUP]\npde\n\n")) < 0) return -1;
     if (report_step("/etc/fstab",
             write_new_file("/etc/fstab", "/dev/hda / ext2 defaults 0 1\n")) < 0) return -1;
     return 0;
@@ -491,3 +495,37 @@ int installer_run(installer_clear_t clear, installer_puts_t puts,
     if (complete_installation() < 0) return 0;
     return 1;
 }
+/* ------------------------------------------------------------------ */
+/* Module interface: "installer"                                        */
+/* ------------------------------------------------------------------ */
+
+#if defined(PIUX_MODULE_INSTALLER)
+
+static const char *const installer_module_names[] = { "installer_run" };
+static const void *const installer_module_addresses[] = { PIUX_EXPORT(installer_run) };
+
+void piux_module_exports(const char *const **names, const void *const **addresses,
+                         uint32_t *count) {
+    *names = installer_module_names;
+    *addresses = installer_module_addresses;
+    *count = 1;
+}
+
+static int installer_module_init(void) {
+    return ext2_is_mounted() ? 0 : -1;
+}
+
+static const char *const installer_module_deps[] = { };
+
+PIUX_MODULE(
+    .name = "installer",
+    .version = PIUX_MODULE_VERSION,
+    .deps = 0,
+    .dep_count = 0,
+    .init = installer_module_init,
+    .description = "First-boot system installer (TUI)"
+);
+
+#endif
+
+#endif /* PIUX_MODULE_INSTALLER */

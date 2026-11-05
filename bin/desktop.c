@@ -1,4 +1,4 @@
-#include "../user/desktop/desktop.h"
+#include "process.h"
 
 typedef void (*desktop_puts_t)(const char *);
 typedef void (*desktop_putc_t)(char);
@@ -42,23 +42,19 @@ void cmd_desktop(const char *param, desktop_puts_t puts, desktop_putc_t putc) {
     }
     if (matches(param, "--info")) {
         print_info(puts);
-        puts(desktop_is_active() ? "Status: active\n" : "Status: inactive\n");
+        puts("Runs as /desktop.elf in user mode.\n");
         return;
     }
     if (matches(param, "--reload")) {
-        puts(desktop_reload() ? "pDE reloaded\n" : "pDE is not active\n");
+        puts("pDE redraws automatically; use Ctrl+Alt+Q to exit.\n");
         return;
     }
     if (matches(param, "--stop")) {
-        puts(desktop_stop() ? "Stopping pDE...\n" : "pDE is not active\n");
+        puts("Use Ctrl+Alt+Q from the desktop to return to the shell.\n");
         return;
     }
     if (param[0] == '\0' || matches(param, "--start")) {
-        if (desktop_is_active()) {
-            puts("pDE is already active\n");
-            return;
-        }
-        if (desktop_run() < 0) puts("pDE requires at least 36 columns and 16 rows\n");
+        if (process_exec("/desktop.elf") < 0) puts("Unable to start /desktop.elf\n");
         return;
     }
     puts("Unknown pde option: ");

@@ -2,9 +2,11 @@
 #define PROCESS_H
 
 #include <stdint.h>
+#include "memory.h"
 
 #define PROCESS_MAX 32
 #define PROCESS_NAME_SIZE 32
+#define PROCESS_USER_STACK_SIZE USER_STACK_SIZE
 
 typedef void (*process_entry_t)(void *argument);
 
@@ -26,8 +28,7 @@ typedef struct {
     char name[PROCESS_NAME_SIZE];
 } process_t;
 
-/* Top of the user stack region handed to ring3 programs loaded via process_exec. */
-#define PROCESS_USER_STACK_TOP 0x03ff0000U
+#define PROCESS_USER_STACK_TOP USER_SPACE_TOP
 
 typedef struct {
     uint32_t eip;
@@ -36,6 +37,7 @@ typedef struct {
     uint32_t ebx;
     uint32_t esi;
     uint32_t edi;
+    uint32_t eflags;
 } process_context_t;
 
 int process_context_save(process_context_t *context);
@@ -51,8 +53,8 @@ void process_yield(void);
 int process_schedule_once(void);
 const process_t *process_current(void);
 
-/* Runs a loaded ELF entry point in ring3 until it exits, blocking the caller. */
-int process_exec(uint32_t entry_point, uint32_t user_stack_top);
+int process_exec(const char *path);
 void process_exit_user(int status) __attribute__((noreturn));
+void process_handle_user_exception(uint32_t vector) __attribute__((noreturn));
 
 #endif

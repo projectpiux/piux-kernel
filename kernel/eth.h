@@ -15,7 +15,6 @@ typedef struct __attribute__((packed)) {
 void eth_get_local_mac(uint8_t mac[6]);
 int eth_send(const uint8_t destination_mac[6], uint16_t ethertype, const void *payload, uint16_t length);
 
-/* Pumps at most one received frame through the stack; safe to call when idle. */
 void net_poll(void);
 
 #endif

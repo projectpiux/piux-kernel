@@ -56,6 +56,6 @@ uint32_t pci_bar_address(const pci_device_t *device, int bar_index) {
 
 void pci_enable_bus_mastering(const pci_device_t *device) {
     uint32_t command = pci_config_read32(device, 0x04);
-    command |= 0x0005; /* I/O space enable + bus master enable */
+    command |= 0x0005; 
     pci_config_write32(device, 0x04, command);
 }

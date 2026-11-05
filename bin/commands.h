@@ -1,6 +1,8 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+#include <stdint.h>
+
 typedef void (*cmd_handler_t)(const char*, void (*)(const char*), void (*)(char));
 
 typedef struct {
@@ -21,7 +23,6 @@ extern void cmd_nano(const char *param, void (*vga_puts)(const char*), void (*vg
 extern void cmd_echo(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_shutdown(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_reboot(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
-extern void cmd_pwm(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_top(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_run(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_net(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
@@ -29,30 +30,16 @@ extern void cmd_pix(const char *param, void (*vga_puts)(const char*), void (*vga
 extern void cmd_numix(const char *, void (*)(const char *), void (*)(char));
 extern void cmd_desktop(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 
-static command_t commands[] = {
-    { "help", cmd_help },
-    { "about", cmd_about },
-    { "ls", cmd_ls },
-    { "cd", cmd_cd },
-    { "cat", cmd_cat },
-    { "clear", cmd_clean },
-    { "fs", cmd_fs },
-    { "touch", cmd_touch },
-    { "mkdir", cmd_mkdir },
-    { "nano", cmd_nano },
-    { "echo", cmd_echo },
-    { "shutdown", cmd_shutdown },
-    { "reboot", cmd_reboot },
-    { "pwm", cmd_pwm },
-    { "pmw", cmd_pwm },
-    { "top", cmd_top },
-    { "run", cmd_run },
-    { "pde", cmd_desktop },
-    { "desktop", cmd_desktop },
-    { "net", cmd_net },
-    { "pix", cmd_pix },
-    { "numix", cmd_numix },
-    { 0, 0 }
-};
+/*
+ * Command table module ("commands").
+ *
+ * The table lives in the module image. The core does not link against the
+ * table: it asks the module manager for the module's public entry point
+ * (the first symbol exported through piux_module_exports).
+ */
+command_t *commands_lookup(const char *name);
+
+/* Non-zero once the vfs module initialized its descriptor table. */
+extern int vfs_module_ready;
 
 #endif

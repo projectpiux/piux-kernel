@@ -5,6 +5,7 @@
 │   ├── cat.c
 │   ├── cd.c
 │   ├── clear.c
+│   ├── commands.c
 │   ├── commands.h
 │   ├── desktop.c
 │   ├── echo.c
@@ -16,7 +17,6 @@
 │   ├── net.c
 │   ├── numix.c
 │   ├── pix.c
-│   ├── pwm.c
 │   ├── reboot.c
 │   ├── run.c
 │   ├── shutdown.c
@@ -26,11 +26,12 @@
 │   └── bootx.asm
 ├── CONTRIBUTING.md
 ├── docs
+│   ├── EXAMPLE-C-EXECUTABLE.md
 │   ├── INIT.md
-│   └── PWM-COMMANDS.md
+│   ├── MODULES.md
+│   └── USERSPACE.md
 ├── etc
-│   ├── os-infos
-│   └── pwm-info
+│   └── os-infos
 ├── fast-all.sh
 ├── grub.cfg
 ├── kernel
@@ -41,6 +42,8 @@
 │   ├── auth.c
 │   ├── auth.h
 │   ├── context.asm
+│   ├── core_services.c
+│   ├── core_symbols.c
 │   ├── dhcp.c
 │   ├── dhcp.h
 │   ├── elf.c
@@ -65,6 +68,7 @@
 │   ├── keyboard.c
 │   ├── keyboard.h
 │   ├── kmain.c
+│   ├── ksym.h
 │   ├── logo
 │   │   ├── ascii
 │   │   │   ├── 24x24
@@ -78,12 +82,18 @@
 │   │   └── piux.png
 │   ├── memory.c
 │   ├── memory.h
+│   ├── mod_command.c
+│   ├── module.c
+│   ├── module.h
 │   ├── mouse.c
 │   ├── mouse.h
 │   ├── net.c
+│   ├── net_core.c
 │   ├── net.h
+│   ├── net_module.h
 │   ├── pci.c
 │   ├── pci.h
+│   ├── piux_module.h
 │   ├── process.c
 │   ├── process.h
 │   ├── ramfs.c
@@ -106,23 +116,24 @@
 │   ├── udp.c
 │   ├── udp.h
 │   ├── vfs.c
+│   ├── vfs_core.c
+│   ├── vfs_core.h
 │   ├── vfs.h
+│   ├── vfs_module.h
 │   ├── video.c
 │   └── video.h
 ├── LICENSE
 ├── linker.ld
 ├── Makefile
 ├── piux.png
+├── preview.png
 ├── README.md
 ├── THANK-YOU-CONTRIBUTORS.md
 ├── TREE.txt
 ├── tui
-│   ├── installer
-│   │   ├── installer.c
-│   │   └── installer.h
-│   └── wm
-│       ├── wm.c
-│       └── wm.h
+│   └── installer
+│       ├── installer.c
+│       └── installer.h
 └── user
     ├── apps
     │   ├── app.h
@@ -137,9 +148,21 @@
     │   ├── app_registry.h
     │   ├── desktop.c
     │   ├── desktop.h
+    │   ├── keyboard.h
     │   ├── launcher.c
     │   ├── launcher.h
+    │   ├── main.c
+    │   ├── mouse.h
+    │   ├── pixelgfx.c
+    │   ├── pixelgfx.h
     │   ├── taskbar.c
-    │   └── taskbar.h
+    │   ├── taskbar.h
+    │   └── video.h
     ├── hello.c
+    ├── isolation_test.c
+    ├── lib
+    │   ├── api.c
+    │   ├── api.h
+    │   ├── pixelfont.c
+    │   └── pixelfont.h
     └── user.ld

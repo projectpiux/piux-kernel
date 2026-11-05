@@ -1,9 +1,16 @@
 #include <stdint.h>
+
+#if defined(PIUX_MODULE_VFS)
+
 #include "vfs.h"
+#include "vfs_module.h"
 #include "ext2.h"
 #include "ata.h"
 #include "keyboard.h"
 #include "auth.h"
+#include "piux_module.h"
+
+#define PIUX_EXPORT(symbol) ((const void *)(uintptr_t)(symbol))
 
 typedef int (*vfs_read_fn)(void *, uint32_t, uint32_t, uint32_t *);
 typedef int (*vfs_write_fn)(const void *, uint32_t, uint32_t, uint32_t *);
@@ -23,6 +30,7 @@ typedef struct {
 } vfs_fd_t;
 
 extern void vga_putc(char c);
+extern int vfs_module_ready;
 extern int ramfs_create_file(const char *filename);
 extern int ramfs_read_file(const char *filename, char *buffer, uint32_t size);
 extern int ramfs_write_file(const char *filename, const char *data, uint32_t size);
@@ -192,17 +200,21 @@ int vfs_read(int fd, void *buffer, uint32_t size) {
     int result;
     if (device) {
         result = device->read ? device->read(buffer, size, descriptors[fd].offset, &done) : -1;
+    } else if (ext2_is_mounted()) {
+        result = ext2_read_file_range_by_path(descriptors[fd].path, descriptors[fd].offset,
+                                              (char *)buffer, size);
+        if (result < 0) return result;
+        done = (uint32_t)result;
     } else {
         char file_buffer[8192];
-        int file_size = ext2_is_mounted() ? ext2_read_file_by_path(descriptors[fd].path, file_buffer, sizeof(file_buffer)) :
-                                           ramfs_read_file(descriptors[fd].path, file_buffer, sizeof(file_buffer));
+        int file_size = ramfs_read_file(descriptors[fd].path, file_buffer, sizeof(file_buffer));
         if (file_size < 0 || descriptors[fd].offset >= (uint32_t)file_size) return 0;
         done = (uint32_t)file_size - descriptors[fd].offset;
         if (done > size) done = size;
         for (uint32_t index = 0; index < done; index++) {
             ((char *)buffer)[index] = file_buffer[descriptors[fd].offset + index];
         }
-        result = 0;
+        result = (int)done;
     }
     if (result < 0) return result;
     descriptors[fd].offset += device ? done : (uint32_t)result;
@@ -245,3 +257,58 @@ vfs_node_type_t vfs_node_type(const char *path) {
     if (is_directory(path)) return VFS_NODE_DIRECTORY;
     return VFS_NODE_FILE;
 }
+
+#if defined(PIUX_MODULE_VFS)
+
+int vfs_module_ready = 0;
+
+extern int (*vfs_open_dispatch)(const char *path, int flags);
+extern int (*vfs_read_dispatch)(int fd, void *buffer, uint32_t size);
+extern int (*vfs_write_dispatch)(int fd, const void *buffer, uint32_t size);
+extern int (*vfs_close_dispatch)(int fd);
+extern int (*vfs_seek_dispatch)(int fd, uint32_t offset);
+extern vfs_node_type_t (*vfs_node_type_dispatch)(const char *path);
+extern vfs_console_putc_t (*vfs_console_output_dispatch)(vfs_console_putc_t putc);
+
+static int vfs_module_init(void) {
+    vfs_module_ready = 0;
+    if (vfs_init() < 0) return -1;
+    vfs_open_dispatch = vfs_open;
+    vfs_read_dispatch = vfs_read;
+    vfs_write_dispatch = vfs_write;
+    vfs_close_dispatch = vfs_close;
+    vfs_seek_dispatch = vfs_seek;
+    vfs_node_type_dispatch = vfs_node_type;
+    vfs_console_output_dispatch = vfs_set_console_output;
+    vfs_module_ready = 1;
+    return 0;
+}
+
+static void vfs_module_exit(void) {
+    vfs_module_ready = 0;
+}
+
+static const char *const vfs_module_deps[] = { };
+
+PIUX_MODULE(
+    .name = "vfs",
+    .version = PIUX_MODULE_VERSION,
+    .deps = 0,
+    .dep_count = 0,
+    .init = vfs_module_init,
+    .exit = vfs_module_exit,
+    .description = "Unix-like virtual filesystem: file descriptors and device nodes"
+);
+
+void piux_module_exports(const char *const **names, const void *const **addresses,
+                         uint32_t *count) {
+    static const char *const export_names[] = { "vfs_module_init" };
+    static const void *const export_addresses[] = { (const void *)(uintptr_t)&vfs_module_init };
+    *names = export_names;
+    *addresses = export_addresses;
+    *count = 1;
+}
+
+#endif
+
+#endif 

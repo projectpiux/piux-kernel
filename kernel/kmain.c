@@ -1,4 +1,4 @@
-// this is the main kernel of Piux, be careful!
+
 
 #include <stdint.h>
 #include "io.h"
@@ -14,12 +14,10 @@
 #include "video.h"
 #include "system.h"
 #include "shell.h"
-#include "rtl8139.h"
-#include "dhcp.h"
+#include "module.h"
+#include "vfs_core.h"
 #include "../bin/commands.h"
 #include "../tui/installer/installer.h"
-#include "../tui/wm/wm.h"
-#include "../user/desktop/desktop.h"
 
 #define VGA_MEMORY 0xB8000
 #define VGA_WIDTH (video_framebuffer_ready ? video_columns : 80)
@@ -48,37 +46,33 @@ static void vga_update_cursor(void) {
 extern ext2_filesystem_t fs;
 extern int ramfs_init(void);
 
-
-// made my nugget for antodev
-
-// these values must be parsed out of the fadt table at boot, but now it is simply overkill
 uint32_t PM1a_CNT_BLK = 0;
 uint32_t PM1b_CNT_BLK = 0;
-// use S5 package (shutdown)
+
 uint8_t SLP_TYPa = 0;
 uint8_t SLP_TYPb = 0;
 
-#define ACPI_SLP_EN (1 << 13) // Bit 13 is the Sleep Enable bit
-// safe poweroff function
+#define ACPI_SLP_EN (1 << 13) 
+
 static void power_off(void) {
-    // for the concept, if PM1a_CNT_BLK is 0, the table is not parsed, but lets not error yet since we use an hardcoded table
-    // disable interrupts (WITHOUT HANGING!) so the cpu doesnt randomly context switch
-    __asm__ __volatile__("cli"); // so GAS doesnt optimize the code
-    // use __asm__ so C does not move this to another function (for optimization resions of qemu and bochs
-    // we would normally execute this block of code if PM1a_CNT_BLK, but again...
+
+
+    __asm__ __volatile__("cli"); 
+
+
     uint16_t pm1a_cmd = (SLP_TYPa << 10) | ACPI_SLP_EN;
     if (PM1a_CNT_BLK) outw((uint16_t)PM1a_CNT_BLK, pm1a_cmd);
     uint16_t pm1b_cmd = (SLP_TYPb << 10) | ACPI_SLP_EN;
     if (PM1b_CNT_BLK) outw((uint16_t)PM1b_CNT_BLK, pm1b_cmd);
-  // now for old versions of qemu/bochs
+
     outw(0xB004, 0x2000);
-    // new versions of qemu
+
     outw(0x604, 0x2000);
-    // for new & old versions of oracle slop (sun microsystsms bstter >:])
+
     outw(0x4004, 0x3400);
-    // for "generic" cloud hypervisors
+
     outb(0x600, 0x34);
-    // simply panic if all the used methods here go wrong.
+
     for(;;) __asm__ __volatile__("cli; hlt");
 }
 
@@ -92,6 +86,51 @@ static void reboot_system(void) {
     outb(0xCF9, 0x06);
     for (;;) {
         asm volatile ("cli; hlt");
+    }
+}
+
+void core_symbols_init(void);
+void core_services_init(void);
+void mod_command(const char *parameter, void (*puts)(const char *), void (*putc)(char));
+
+static command_t *(*dispatch_command_lookup)(const char *name);
+static int (*dispatch_installer_run)(void (*)(void), void (*)(const char *),
+                                     void (*)(char), void (*)(void), void (*)(void));
+
+static void load_kernel_modules(void) {
+    static const char *const modules[] = { "vfs", "installer", "net", "commands" };
+    for (int index = 0; index < (int)(sizeof(modules) / sizeof(modules[0])); index++) {
+        int result = module_load_by_name(modules[index]);
+        if (result < 0) {
+            vga_puts("[!] module ");
+            vga_puts(modules[index]);
+            vga_puts(" failed: ");
+            vga_puts(module_last_detail[0] ? module_last_detail : "unknown error");
+            vga_puts("\n");
+        } else if (result > 0) {
+            vga_puts("[*] module ");
+            vga_puts(modules[index]);
+            vga_puts(" already loaded\n");
+        } else {
+            vga_puts("[ OK ] module ");
+            vga_puts(modules[index]);
+            vga_puts(" loaded\n");
+        }
+    }
+
+
+
+    {
+        const module_image_t *commands = module_find("commands");
+        const module_image_t *installer = module_find("installer");
+        if (commands && commands->entry) {
+            dispatch_command_lookup = (command_t *(*)(const char *))(uintptr_t)commands->entry;
+        }
+        if (installer && installer->entry) {
+            dispatch_installer_run = (int (*)(void (*)(void), void (*)(const char *),
+                                               void (*)(char), void (*)(void),
+                                               void (*)(void)))(uintptr_t)installer->entry;
+        }
     }
 }
 
@@ -307,7 +346,9 @@ static int first_boot_menu(void) {
             update_boot_menu(selected);
         } else if (key == '\n' || key == '\r') {
             if (selected == 0) {
-                if (installer_run(vga_clear, vga_puts, vga_putc, power_off, reboot_system) == 1) {
+                int installed = dispatch_installer_run ?
+                    dispatch_installer_run(vga_clear, vga_puts, vga_putc, power_off, reboot_system) : -1;
+                if (installed == 1) {
                     mark_first_boot_complete();
                     return 1;
                 }
@@ -333,16 +374,6 @@ static void redraw_input_line(const char *buffer, int from, int length, int old_
     for (; i < old_length; i++) vga_put_char(' ');
     for (i = drawn_length; i > cursor; i--) vga_step_left();
     vga_update_cursor();
-}
-
-command_t* find_command(const char *name) {
-    if (!name) return 0;
-    for (int i = 0; commands[i].name != 0; i++) {
-        if (strcmp(commands[i].name, name) == 0) {
-            return &commands[i];
-        }
-    }
-    return 0;
 }
 
 static int has_sudo_prefix(const char *text) {
@@ -374,6 +405,17 @@ int shell_execute_command_line(const char *line, void (*puts)(const char *), voi
         while (*text == ' ') text++;
         if (!*text) return 0;
     }
+
+    if (text[0] == 'm' && text[1] == 'o' && text[2] == 'd' &&
+        (text[3] == '\0' || text[3] == ' ')) {
+        mod_command(text[3] ? text + 4 : "", puts, putc);
+        return 1;
+    }
+
+    if (!core_vfs_ready()) {
+        puts("vfs module is not loaded: run 'mod load vfs'.\n");
+        return -1;
+    }
     for (int index = 0; text[index]; index++)
         if (text[index] == ' ') {
             space_pos = index;
@@ -389,7 +431,7 @@ int shell_execute_command_line(const char *line, void (*puts)(const char *), voi
         parameter[0] = '\0';
     }
     {
-        command_t *command = find_command(command_name);
+        command_t *command = dispatch_command_lookup ? dispatch_command_lookup(command_name) : 0;
         if (command) {
             vfs_console_putc_t previous_output = vfs_set_console_output(putc);
             command->handler(parameter, puts, putc);
@@ -532,7 +574,6 @@ static int startup_word_is(const char *line, const char *word) {
     return !word[index] && (line[index] == '\0' || line[index] == ' ' || line[index] == '\t');
 }
 
-// Runs the first command of the [STARTUP] block in /sbin/init (default: pde).
 static void run_startup(void) {
     static char init[1024];
     int length = ext2_is_mounted() ? ext2_read_file_by_path("/sbin/init", init, sizeof(init) - 1) : -1;
@@ -567,10 +608,8 @@ static void run_startup(void) {
         command[0] = 'p'; command[1] = 'd'; command[2] = 'e'; command[3] = '\0';
     }
     if (!command[0]) return;
-    if (startup_word_is(command, "pwm") || startup_word_is(command, "pmw"))
-        pwm_run(vga_clear, vga_puts, vga_putc);
-    else if (startup_word_is(command, "pde") || startup_word_is(command, "desktop")) {
-        if (desktop_run() < 0) vga_puts("Unable to start the desktop.\n");
+    if (startup_word_is(command, "pde") || startup_word_is(command, "desktop")) {
+        if (process_exec("/desktop.elf") < 0) vga_puts("Unable to start /desktop.elf.\n");
     } else
         shell_execute_command_line(command, vga_puts, vga_putc);
 }
@@ -582,16 +621,18 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     vga_clear();
     vga_update_cursor();
 
-    memory_init();
+    memory_init(system_memory_upper_kb);
     gdt_init();
     ramfs_init();
     ext2_mount();
     keyboard_load_layout_from_config();
-    vfs_init();
+    module_init();
+    core_symbols_init();
+    core_services_init();
     process_init();
     syscall_init();
     timer_init(100);
-    if (rtl8139_init() == 0) dhcp_configure();
+    load_kernel_modules();
 
     if (!first_boot_menu()) {
         vga_puts("Welcome to Piux!\n");

@@ -5,6 +5,10 @@
 
 #define DESKTOP_MAX_WINDOWS 4
 
+/* Le finestre sono in coordinate pixel nativi; bordo e barra titolo in px. */
+#define DESKTOP_BORDER      2
+#define DESKTOP_TITLEBAR_H  26
+
 typedef struct {
     int open;
     int minimized;
@@ -17,9 +21,5 @@ typedef struct {
 } desktop_window_t;
 
 int desktop_run(void);
-int desktop_is_active(void);
-int desktop_read_char(void);
-int desktop_stop(void);
-int desktop_reload(void);
 
 #endif

@@ -42,19 +42,11 @@ typedef char video_cell_size_check[(VIDEO_CELL_WIDTH >= 6 && VIDEO_CELL_HEIGHT >
 typedef uint32_t __attribute__((may_alias, aligned(1))) video_u32;
 typedef uint16_t __attribute__((may_alias, aligned(1))) video_u16;
 
-/* ------------------------------------------------------------------------- */
-/* Exported state                                                            */
-/* ------------------------------------------------------------------------- */
-
 int video_framebuffer_ready;
 int video_columns = 80;
 int video_rows = 25;
 int video_pixel_width;
 int video_pixel_height;
-
-/* ------------------------------------------------------------------------- */
-/* Internal state                                                            */
-/* ------------------------------------------------------------------------- */
 
 static struct {
     uint8_t *base;
@@ -126,10 +118,6 @@ struct multiboot_info {
     uint8_t color_info[6];
 } __attribute__((packed));
 
-/* ------------------------------------------------------------------------- */
-/* Port I/O                                                                  */
-/* ------------------------------------------------------------------------- */
-
 #if VIDEO_X86
 static inline void port_outw(uint16_t port, uint16_t value) {
     __asm__ volatile("outw %0, %1" : : "a"(value), "Nd"(port));
@@ -153,10 +141,6 @@ static inline uint16_t port_inw(uint16_t port) { (void)port; return 0xFFFF; }
 static inline void port_outl(uint16_t port, uint32_t value) { (void)port; (void)value; }
 static inline uint32_t port_inl(uint16_t port) { (void)port; return 0xFFFFFFFFu; }
 #endif
-
-/* ------------------------------------------------------------------------- */
-/* Memory primitives                                                         */
-/* ------------------------------------------------------------------------- */
 
 static inline void mem_fill32(void *dst, uint32_t value, uint32_t count) {
 #if VIDEO_X86
@@ -190,7 +174,6 @@ static inline void mem_copy(void *dst, const void *src, uint32_t bytes) {
 #endif
 }
 
-/* Overlap-safe copy. The backward path now moves whole words. */
 static void mem_move(void *dst, const void *src, uint32_t bytes) {
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
@@ -208,10 +191,6 @@ static void mem_move(void *dst, const void *src, uint32_t bytes) {
     }
     while (bytes--) *--d = *--s;
 }
-
-/* ------------------------------------------------------------------------- */
-/* Raw pixel access (any 2/3/4 byte format)                                  */
-/* ------------------------------------------------------------------------- */
 
 static inline uint32_t pixel_read(const uint8_t *p, uint8_t bytes) {
     if (bytes == 4) return *(const video_u32 *)p;
@@ -249,7 +228,7 @@ static void fill_pixels(uint8_t *dst, uint32_t value, uint32_t count, uint8_t by
         if (count & 1u) *(video_u16 *)dst = v;
     } else {
 #if VIDEO_LE
-        /* 4 pixels = 12 bytes = 3 aligned-agnostic words */
+
         uint32_t b0 = value & 0xFFu, b1 = (value >> 8) & 0xFFu, b2 = (value >> 16) & 0xFFu;
         uint32_t w0 = b0 | (b1 << 8) | (b2 << 16) | (b0 << 24);
         uint32_t w1 = b1 | (b2 << 8) | (b0 << 16) | (b1 << 24);
@@ -280,11 +259,6 @@ static void write_pixels(uint8_t *dst, const uint32_t *src, uint32_t count, uint
     }
 }
 
-/* ------------------------------------------------------------------------- */
-/* Colour packing / blending                                                 */
-/* ------------------------------------------------------------------------- */
-
-/* Channel sizes up to 16 bits are supported (e.g. 10-bit deep colour). */
 static inline uint32_t pack_channel(uint32_t c8, uint8_t pos, uint8_t size) {
     uint32_t max;
     if (!size) return 0;
@@ -315,7 +289,6 @@ static inline uint32_t mix8(uint32_t src, uint32_t dst, uint32_t alpha) {
     return (t + (t >> 8)) >> 8;
 }
 
-/* t = src*alpha + 128 is pre-multiplied by the caller */
 static inline uint32_t mix8p(uint32_t src_a, uint32_t dst, uint32_t inv_alpha) {
     uint32_t t = src_a + dst * inv_alpha;
     return (t + (t >> 8)) >> 8;
@@ -335,7 +308,6 @@ static uint32_t blend_pixel(uint32_t raw_dst, uint32_t rgb, uint8_t alpha) {
     return pack_channel(r, fb.rpos, fb.rsize) | pack_channel(g, fb.gpos, fb.gsize) | pack_channel(b, fb.bpos, fb.bsize);
 }
 
-/* Blend a solid colour over `count` pixels in place. */
 static void blend_span(uint8_t *p, uint32_t count, uint32_t color, uint8_t alpha) {
     if (fb.xrgb) {
         uint32_t a = alpha, ia = 255u - a;
@@ -353,10 +325,6 @@ static void blend_span(uint8_t *p, uint32_t count, uint32_t color, uint8_t alpha
     for (; count; count--, p += fb.bytes)
         pixel_write(p, blend_pixel(pixel_read(p, fb.bytes), color, alpha), fb.bytes);
 }
-
-/* ------------------------------------------------------------------------- */
-/* Font: 5x7 glyphs parsed once into row bitmasks                            */
-/* ------------------------------------------------------------------------- */
 
 static const char *const glyph_letters[26] = {
     "01110 10001 10001 11111 10001 10001 10001", "11110 10001 10001 11110 10001 10001 11110",
@@ -459,10 +427,6 @@ static const uint32_t vga_palette[16] = {
     0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
 };
 
-/* ------------------------------------------------------------------------- */
-/* Clipping, dirty tracking, shadow surface                                  */
-/* ------------------------------------------------------------------------- */
-
 static void get_clip(int *x0, int *y0, int *x1, int *y1) {
     if (video_frame_active) {
         *x0 = (int)video_frame_x;
@@ -483,8 +447,6 @@ static inline int clamp_int(int64_t v) {
     return (int)v;
 }
 
-/* Clips [a, a+len) to [lo, hi); the companion coordinate b moves with a.
- * Uses 64-bit math so hostile coordinates cannot overflow. */
 static int clip_axis(int *a, int *b, int *len, int lo, int hi) {
     int64_t pa = *a, pb = *b, l = *len;
     if (l <= 0) return 0;
@@ -567,10 +529,6 @@ static inline int hw_copy(int sx, int sy, int dx, int dy, int w, int h) {
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
-/* PCI + Bochs/QEMU BGA                                                      */
-/* ------------------------------------------------------------------------- */
-
 static uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     port_outl(0xCF8, 0x80000000u | ((uint32_t)bus << 16) | ((uint32_t)slot << 11) |
                      ((uint32_t)func << 8) | (offset & 0xFCu));
@@ -583,8 +541,6 @@ static void pci_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
     port_outl(0xCFC, value);
 }
 
-/* Finds the first VGA-compatible display controller; falls back to any
- * display-class device (3D controller etc.) when no VGA device exists. */
 static int pci_find_display(struct video_gpu_info *out) {
     struct video_gpu_info fallback;
     int have_fallback = 0;
@@ -685,8 +641,8 @@ static int bga_set_mode(uint32_t width, uint32_t height, uint8_t bpp, struct vid
     if (width < 320 || height < 200 || width > 0xFFFF || height > 0xFFFF) return 0;
     if (bpp != 15 && bpp != 16 && bpp != 24 && bpp != 32) return 0;
 
-    /* Make sure the device decodes its memory BAR. Only the command half of
-     * the register is written back so write-1-to-clear status bits are kept. */
+
+
     command = pci_read32(gpu_info.bus, gpu_info.slot, gpu_info.func, 0x04) & 0xFFFFu;
     if (!(command & 2u))
         pci_write32(gpu_info.bus, gpu_info.slot, gpu_info.func, 0x04, command | 2u);
@@ -737,7 +693,7 @@ static const struct video_driver driver_generic = {
 
 static void set_active_driver(const struct video_driver *driver) {
     if (driver == active_driver) return;
-    vram_sync(); /* drain the old driver's queue before it is replaced */
+    vram_sync(); 
     active_driver = driver;
 }
 
@@ -778,10 +734,6 @@ const struct video_gpu_info *video_gpu_info(void) {
     return gpu_present ? &gpu_info : 0;
 }
 
-/* ------------------------------------------------------------------------- */
-/* Surface setup / mode changes                                              */
-/* ------------------------------------------------------------------------- */
-
 static int layout_valid(const struct video_surface_info *s, uint8_t bytes) {
     uint32_t bits = (uint32_t)bytes * 8u;
     if (!s->red_size || !s->green_size || !s->blue_size) return 0;
@@ -797,8 +749,6 @@ static int layout_valid(const struct video_surface_info *s, uint8_t bytes) {
     return 1;
 }
 
-/* Validates first, then commits, so a rejected surface never leaves the
- * exported state half-updated. Cancels any open frame and clears the screen. */
 static int surface_apply(const struct video_surface_info *info) {
     struct video_surface_info s;
     uint8_t bytes;
@@ -816,7 +766,7 @@ static int surface_apply(const struct video_surface_info *info) {
     s = *info;
     if (!layout_valid(&s, bytes)) default_layout(s.bpp, &s);
 
-    vram_sync(); /* finish pending accelerated work on the old surface */
+    vram_sync(); 
 
     video_framebuffer_ready = 0;
     video_frame_active = 0;
@@ -912,10 +862,6 @@ void video_init(uint32_t magic, uint32_t multiboot_address) {
     surface_apply(&surface);
 }
 
-/* ------------------------------------------------------------------------- */
-/* Clear / frames                                                            */
-/* ------------------------------------------------------------------------- */
-
 static void clear_surface(uint8_t *base, uint32_t pitch) {
     uint32_t row_bytes = fb.width * fb.bytes;
     if (pitch == row_bytes) {
@@ -978,10 +924,6 @@ void video_present_region(void) {
     video_present();
 }
 
-/* ------------------------------------------------------------------------- */
-/* Drawing                                                                   */
-/* ------------------------------------------------------------------------- */
-
 void video_fill_rect(int x, int y, int width, int height, uint32_t color, uint8_t alpha) {
     int cx0, cy0, cx1, cy1, unused = 0;
     uint8_t *base;
@@ -1019,7 +961,7 @@ static void surface_copy(uint8_t *base, uint32_t pitch, int sx, int sy, int dx, 
     uint32_t bytes = (uint32_t)w * fb.bytes;
     int reverse;
     if (bytes == pitch) {
-        /* full-width rows are contiguous: one overlap-safe move */
+
         mem_move(base + (uintptr_t)dy * pitch, base + (uintptr_t)sy * pitch, bytes * (uint32_t)h);
         return;
     }
@@ -1176,8 +1118,6 @@ void video_put_pixel(int x, int y, uint32_t color, uint8_t alpha) {
     }
 }
 
-/* Buffer format: 4 bytes per pixel holding the raw framebuffer pixel value
- * (zero-extended for 15/16/24 bpp). capture/restore use the same layout. */
 void video_capture_region(int x, int y, int width, int height, uint8_t *buffer) {
     const uint8_t *base;
     uint32_t pitch;
