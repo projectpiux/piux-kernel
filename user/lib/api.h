@@ -2,7 +2,7 @@
 #define PIUX_USER_API_H
 
 #include <stdint.h>
-#include "../../kernel/syscall.h"
+#include "../../kernel/core/syscall.h"
 
 #define PIUX_IPC_MAGIC 0x50495058U
 #define PIUX_IPC_VERSION 1

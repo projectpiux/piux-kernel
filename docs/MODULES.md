@@ -25,7 +25,7 @@ kernel.elf (core)                 /lib/modules/*.mod
 
 A module is a relocatable i386 ELF object produced by `ld -r`. It must define
 one global symbol, `piux_module_descriptor`, placed in the `.piux.module`
-section (see `kernel/piux_module.h`):
+section (see `kernel/core/piux_module.h`):
 
 ```c
 static int my_module_init(void) { ...; return 0; }
@@ -60,7 +60,7 @@ Only the symbols listed there become visible to the rest of the system
 symbol table — every module defines a symbol with that name, and the table
 keeps only the first definition.
 
-### The loader (`kernel/module.c`)
+### The loader (`kernel/core/module.c`)
 
 `module_load_by_name("vfs")` reads `/lib/modules/vfs.mod`, then:
 
@@ -100,12 +100,12 @@ module loaded (this is how `commands.mod` depends on `vfs.mod`).
 The core keeps small dispatch stubs so that nothing in the kernel links
 against a subsystem implementation:
 
-- `kernel/vfs_core.c` — `vfs_open`/`vfs_read`/... call through dispatch
+- `kernel/fs/vfs_core.c` — `vfs_open`/`vfs_read`/... call through dispatch
   pointers that stay NULL (and fail cleanly) until `vfs.mod` fills them in its
   `init()`. `core_vfs_ready()` tells the shell whether the filesystem is up.
-- `kernel/net_core.c` — byte-order and checksum primitives stay in the core;
+- `kernel/net/net_core.c` — byte-order and checksum primitives stay in the core;
   DNS/host resolution dispatches into `net.mod` when loaded.
-- `kernel/kmain.c` — `dispatch_command_lookup` and `dispatch_installer_run`
+- `kernel/core/kmain.c` — `dispatch_command_lookup` and `dispatch_installer_run`
   are bound to the first public export of the `commands` and `installer`
   modules after loading; with the module missing, every non-`mod` shell
   command reports `vfs module is not loaded` and startup falls back to the
@@ -139,7 +139,7 @@ make install-user-programs    # desktop.elf + the modules on the disk image
 ```
 
 Each module is compiled from the same sources as the core (for example
-`kernel/vfs.c` for `vfs.mod`) with `-DPIUX_MODULE_<NAME>` and
+`kernel/fs/vfs.c` for `vfs.mod`) with `-DPIUX_MODULE_<NAME>` and
 `-DPIUX_MODULE_RELEASE=<core release>`, then linked with `ld -r`. The module
 files are written into `/lib/modules/` on the ext2 image by `debugfs`.
 

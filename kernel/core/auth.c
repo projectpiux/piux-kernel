@@ -1,10 +1,10 @@
 #include <stdint.h>
 #include "auth.h"
-#include "ext2.h"
+#include "../fs/ext2.h"
 #include "keyboard.h"
 
 #ifdef AUTH_CENTER_WITH_VIDEO
-#include "video.h"
+#include "../video/video.h"
 #endif
 
 #define AUTH_PASSWD_PATH      "/.config/passwd"

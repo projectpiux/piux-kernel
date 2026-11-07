@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include "http.h"
 #include "tcp.h"
-#include "tls.h"
-#include "vfs.h"
+#include "../core/tls.h"
+#include "../fs/vfs.h"
 
 int http_get_to_fd(uint32_t ip, uint16_t port, const char *path, const char *host, int output_fd) {
     char request[256];

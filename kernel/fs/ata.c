@@ -1,5 +1,5 @@
 #include "ata.h"
-#include "io.h"
+#include "../core/io.h"
 
 void ata_init(void) {
     outb(ATA_PRIMARY_CTRL, 0x02);

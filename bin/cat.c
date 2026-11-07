@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "ext2.h"
+#include "../kernel/fs/ext2.h"
 
 typedef void (*vga_puts_t)(const char *);
 typedef void (*vga_putc_t)(char);

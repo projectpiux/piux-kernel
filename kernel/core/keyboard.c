@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "io.h"
 #include "keyboard.h"
-#include "ext2.h"
+#include "../fs/ext2.h"
 
 static const char scancode_ascii_us[] = {
     0,      27,     '1',    '2',    '3',    '4',    '5',    '6',    '7',    '8',    '9',    '0',    '-',    '=',    '\b',

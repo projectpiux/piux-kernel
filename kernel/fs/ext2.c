@@ -1,8 +1,8 @@
 #include <stdint.h>
-#include "io.h"
+#include "../core/io.h"
 #include "ata.h"
 #include "ext2.h"
-#include "auth.h"
+#include "../core/auth.h"
 
 ext2_filesystem_t fs;
 static int fs_initialized;

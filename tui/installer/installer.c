@@ -2,12 +2,12 @@
 
 #if defined(PIUX_MODULE_INSTALLER)
 
-#include "ext2.h"
-#include "keyboard.h"
+#include "../../kernel/fs/ext2.h"
+#include "../../kernel/core/keyboard.h"
 #include "installer.h"
-#include "auth.h"
-#include "video.h"
-#include "piux_module.h"
+#include "../../kernel/core/auth.h"
+#include "../../kernel/video/video.h"
+#include "../../kernel/core/piux_module.h"
 
 #define INSTALLER_TOTAL_STEPS   3
 #define INSTALLER_BOX_MIN_WIDTH 52

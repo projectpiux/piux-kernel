@@ -9,8 +9,8 @@
 #include "eth.h"
 
 #if defined(PIUX_MODULE_NET)
-#include "piux_module.h"
-#include "rtl8139.h"
+#include "../core/piux_module.h"
+#include "../drivers/rtl8139.h"
 #include "dhcp.h"
 
 extern int (*net_resolve_host_dispatch)(const char *text, uint32_t *out_ip);

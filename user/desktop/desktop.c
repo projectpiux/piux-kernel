@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "desktop.h"
-#include "../../kernel/syscall.h"
+#include "../../kernel/core/syscall.h"
 #include "app_registry.h"
 #include "launcher.h"
 #include "taskbar.h"

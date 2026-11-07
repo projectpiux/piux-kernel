@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "../kernel/syscall.h"
+#include "../kernel/core/syscall.h"
 #include "../user/lib/api.h"
 #include "../user/lib/ustr.h"
 

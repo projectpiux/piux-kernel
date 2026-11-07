@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "elf.h"
-#include "vfs.h"
+#include "../fs/vfs.h"
 #include "memory.h"
 
 #define ELF_MAX_FILE_SIZE (256U * 1024U)

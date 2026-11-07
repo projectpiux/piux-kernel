@@ -1,10 +1,10 @@
 #include <stdint.h>
-#include "../kernel/rtl8139.h"
-#include "../kernel/net.h"
-#include "../kernel/vfs.h"
-#include "../kernel/ext2.h"
-#include "../kernel/http.h"
-#include "../kernel/tls.h"
+#include "../kernel/drivers/rtl8139.h"
+#include "../kernel/net/net.h"
+#include "../kernel/fs/vfs.h"
+#include "../kernel/fs/ext2.h"
+#include "../kernel/net/http.h"
+#include "../kernel/core/tls.h"
 
 typedef void (*vga_puts_t)(const char*);
 typedef void (*vga_putc_t)(char);

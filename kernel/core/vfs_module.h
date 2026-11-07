@@ -1,7 +1,7 @@
 #ifndef VFS_MODULE_H
 #define VFS_MODULE_H
 
-#include "vfs.h"
+#include "../fs/vfs.h"
 
 extern int vfs_module_ready;
 

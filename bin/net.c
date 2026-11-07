@@ -1,12 +1,12 @@
 #include <stdint.h>
-#include "../kernel/rtl8139.h"
-#include "../kernel/net.h"
-#include "../kernel/ip.h"
-#include "../kernel/arp.h"
-#include "../kernel/icmp.h"
-#include "../kernel/udp.h"
-#include "../kernel/http.h"
-#include "../kernel/vfs.h"
+#include "../kernel/drivers/rtl8139.h"
+#include "../kernel/net/net.h"
+#include "../kernel/net/ip.h"
+#include "../kernel/net/arp.h"
+#include "../kernel/net/icmp.h"
+#include "../kernel/net/udp.h"
+#include "../kernel/net/http.h"
+#include "../kernel/fs/vfs.h"
 
 typedef void (*vga_puts_t)(const char*);
 typedef void (*vga_putc_t)(char);

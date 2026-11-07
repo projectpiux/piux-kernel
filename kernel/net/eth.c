@@ -3,7 +3,7 @@
 #include "arp.h"
 #include "ip.h"
 #include "net.h"
-#include "rtl8139.h"
+#include "../drivers/rtl8139.h"
 
 #define ETH_MAX_FRAME 1514
 

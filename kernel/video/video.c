@@ -1,5 +1,5 @@
 #include "video.h"
-#include "vga_log.h"
+#include "../core/vga_log.h"
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
 #define MULTIBOOT_INFO_FRAMEBUFFER (1u << 12)

@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "module.h"
-#include "../bin/commands.h"
-#include "shell.h"
+#include "../../bin/commands.h"
+#include "../video/shell.h"
 
 void vga_puts(const char *text);
 void vga_putc(char character);

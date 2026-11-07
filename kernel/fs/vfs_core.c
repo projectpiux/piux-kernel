@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "vfs.h"
 #include "vfs_core.h"
-#include "vfs_module.h"
+#include "../core/vfs_module.h"
 
 #ifndef PIUX_MODULE_VFS
 #define PIUX_MODULE_VFS

@@ -1,4 +1,4 @@
-#include "process.h"
+#include "../kernel/core/process.h"
 
 typedef void (*desktop_puts_t)(const char *);
 typedef void (*desktop_putc_t)(char);

@@ -11,6 +11,8 @@
 │   ├── echo.c
 │   ├── fs.c
 │   ├── help.c
+│   ├── initctl.c
+│   ├── initctl_sh.c
 │   ├── ls.c
 │   ├── mkdir.c
 │   ├── nano.c
@@ -34,41 +36,72 @@
 │   └── os-infos
 ├── fast-all.sh
 ├── grub.cfg
+├── init
+│   ├── init.c
+│   └── init.h
 ├── kernel
-│   ├── arp.c
-│   ├── arp.h
-│   ├── ata.c
-│   ├── ata.h
-│   ├── auth.c
-│   ├── auth.h
-│   ├── context.asm
-│   ├── core_services.c
-│   ├── core_symbols.c
-│   ├── dhcp.c
-│   ├── dhcp.h
-│   ├── elf.c
-│   ├── elf.h
-│   ├── eth.c
-│   ├── eth.h
-│   ├── ext2.c
-│   ├── ext2.h
-│   ├── gdt.c
-│   ├── gdt_flush.asm
-│   ├── gdt.h
-│   ├── http.c
-│   ├── http.h
-│   ├── icmp.c
-│   ├── icmp.h
-│   ├── idt.c
-│   ├── interrupt_entry.asm
-│   ├── io.h
-│   ├── ip.c
-│   ├── ip.h
-│   ├── kernel_entry.asm
-│   ├── keyboard.c
-│   ├── keyboard.h
-│   ├── kmain.c
-│   ├── ksym.h
+│   ├── boot
+│   ├── core
+│   │   ├── auth.c
+│   │   ├── auth.h
+│   │   ├── context.asm
+│   │   ├── context.h
+│   │   ├── core_services.c
+│   │   ├── core_symbols.c
+│   │   ├── elf.c
+│   │   ├── elf.h
+│   │   ├── gdt.c
+│   │   ├── gdt_flush.asm
+│   │   ├── gdt.h
+│   │   ├── idt.c
+│   │   ├── interrupt_entry.asm
+│   │   ├── io.h
+│   │   ├── kernel_entry.asm
+│   │   ├── keyboard.c
+│   │   ├── keyboard.h
+│   │   ├── kmain.c
+│   │   ├── ksym.h
+│   │   ├── memory.c
+│   │   ├── memory.h
+│   │   ├── mod_command.c
+│   │   ├── module.c
+│   │   ├── module.h
+│   │   ├── mouse.c
+│   │   ├── mouse.h
+│   │   ├── net_module.h
+│   │   ├── piux_module.h
+│   │   ├── process.c
+│   │   ├── process.h
+│   │   ├── switch.asm
+│   │   ├── syscall.c
+│   │   ├── syscall_entry.asm
+│   │   ├── syscall.h
+│   │   ├── system.c
+│   │   ├── system.h
+│   │   ├── timer.c
+│   │   ├── timer.h
+│   │   ├── tls.c
+│   │   ├── tls_compat.c
+│   │   ├── tls.h
+│   │   ├── vfs_module.h
+│   │   ├── vga_log.c
+│   │   └── vga_log.h
+│   ├── drivers
+│   │   ├── pci.c
+│   │   ├── pci.h
+│   │   ├── rtl8139.c
+│   │   └── rtl8139.h
+│   ├── fs
+│   │   ├── ata.c
+│   │   ├── ata.h
+│   │   ├── ext2.c
+│   │   ├── ext2.h
+│   │   ├── ramfs.c
+│   │   ├── ramfs.h
+│   │   ├── vfs.c
+│   │   ├── vfs_core.c
+│   │   ├── vfs_core.h
+│   │   └── vfs.h
 │   ├── logo
 │   │   ├── ascii
 │   │   │   ├── 24x24
@@ -80,48 +113,30 @@
 │   │   ├── cur
 │   │   │   └── arrow.png
 │   │   └── piux.png
-│   ├── memory.c
-│   ├── memory.h
-│   ├── mod_command.c
-│   ├── module.c
-│   ├── module.h
-│   ├── mouse.c
-│   ├── mouse.h
-│   ├── net.c
-│   ├── net_core.c
-│   ├── net.h
-│   ├── net_module.h
-│   ├── pci.c
-│   ├── pci.h
-│   ├── piux_module.h
-│   ├── process.c
-│   ├── process.h
-│   ├── ramfs.c
-│   ├── ramfs.h
-│   ├── rtl8139.c
-│   ├── rtl8139.h
-│   ├── shell.h
-│   ├── syscall.c
-│   ├── syscall_entry.asm
-│   ├── syscall.h
-│   ├── system.c
-│   ├── system.h
-│   ├── tcp.c
-│   ├── tcp.h
-│   ├── timer.c
-│   ├── timer.h
-│   ├── tls.c
-│   ├── tls_compat.c
-│   ├── tls.h
-│   ├── udp.c
-│   ├── udp.h
-│   ├── vfs.c
-│   ├── vfs_core.c
-│   ├── vfs_core.h
-│   ├── vfs.h
-│   ├── vfs_module.h
-│   ├── video.c
-│   └── video.h
+│   ├── net
+│   │   ├── arp.c
+│   │   ├── arp.h
+│   │   ├── dhcp.c
+│   │   ├── dhcp.h
+│   │   ├── eth.c
+│   │   ├── eth.h
+│   │   ├── http.c
+│   │   ├── http.h
+│   │   ├── icmp.c
+│   │   ├── icmp.h
+│   │   ├── ip.c
+│   │   ├── ip.h
+│   │   ├── net.c
+│   │   ├── net_core.c
+│   │   ├── net.h
+│   │   ├── tcp.c
+│   │   ├── tcp.h
+│   │   ├── udp.c
+│   │   └── udp.h
+│   └── video
+│       ├── shell.h
+│       ├── video.c
+│       └── video.h
 ├── LICENSE
 ├── linker.ld
 ├── Makefile
@@ -164,5 +179,7 @@
     │   ├── api.c
     │   ├── api.h
     │   ├── pixelfont.c
-    │   └── pixelfont.h
+    │   ├── pixelfont.h
+    │   ├── ustr.c
+    │   └── ustr.h
     └── user.ld

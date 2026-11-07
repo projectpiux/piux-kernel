@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "../kernel/io.h"
+#include "../kernel/core/io.h"
 
 typedef void (*vga_puts_t)(const char*);
 typedef void (*vga_putc_t)(char);

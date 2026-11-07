@@ -1,11 +1,11 @@
 #include "commands.h"
-#include "../kernel/piux_module.h"
+#include "../kernel/core/piux_module.h"
 
-#include "../kernel/ext2.h"
-#include "../kernel/system.h"
-#include "../kernel/process.h"
-#include "../kernel/vfs.h"
-#include "../kernel/keyboard.h"
+#include "../kernel/fs/ext2.h"
+#include "../kernel/core/system.h"
+#include "../kernel/core/process.h"
+#include "../kernel/fs/vfs.h"
+#include "../kernel/core/keyboard.h"
 
 #ifndef PIUX_MODULE_COMMANDS
 #define PIUX_MODULE_COMMANDS

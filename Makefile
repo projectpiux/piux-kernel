@@ -17,12 +17,11 @@ DISK      := $(BUILD_DIR)/ext2.img
 CURSOR_RAW := $(BUILD_DIR)/cursor.rgba
 CURSOR_OBJ := $(BUILD_DIR)/cursor.o
 
-KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD_DIR)/kernel/%.o,$(wildcard kernel/*.c))
-KERNEL_ASM_OBJS := $(BUILD_DIR)/kernel/syscall_entry.o
-KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/gdt_flush.o
-KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/interrupt_entry.o
-KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/context.o
-KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/switch.o
+KERNEL_OBJS := $(patsubst kernel/%.c,$(BUILD_DIR)/kernel/%.o,$(wildcard kernel/*/*.c))
+# kernel/core/kernel_entry.asm è mantenuto solo come riferimento: l'entry point
+# reale (_start) vive in boot/bootx.asm e chiama kernel_main.
+KERNEL_ASM_SOURCES := $(filter-out kernel/core/kernel_entry.asm,$(wildcard kernel/*/*.asm))
+KERNEL_ASM_OBJS := $(patsubst kernel/%.asm,$(BUILD_DIR)/kernel/%.o,$(KERNEL_ASM_SOURCES))
 # Subsystems shipped as loadable modules (see kernel/module_abi.h).
 MODULES     := vfs commands net installer
 MODULE_FLAGS := $(CFLAGS) -fno-asynchronous-unwind-tables
@@ -39,6 +38,8 @@ USER_PROGRAMS := $(BUILD_DIR)/user/hello.elf $(BUILD_DIR)/user/isolation_test.el
                  $(BUILD_DIR)/init/init.elf $(BUILD_DIR)/bin/initctl.elf
 
 LOGOS      := $(wildcard kernel/logo/ascii/*/*)
+
+KERNEL_INCLUDES := -I kernel/core -I kernel/fs -I kernel/net -I kernel/drivers -I kernel/video
 LOGO_OBJS  := $(patsubst kernel/logo/ascii/%,$(BUILD_DIR)/logo-%.o,$(LOGOS))
 
 OBJECTS := $(BUILD_DIR)/bootx.o $(KERNEL_OBJS) $(KERNEL_ASM_OBJS) $(LOGO_OBJS) $(BUILD_DIR)/os-infos.o
@@ -52,7 +53,7 @@ $(BUILD_DIR)/bootx.o: boot/bootx.asm
 
 $(BUILD_DIR)/kernel/%.o: kernel/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -c -o $@ $<
+	$(CC) $(CFLAGS) $(KERNEL_INCLUDES) -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -c -o $@ $<
 
 $(BUILD_DIR)/kernel/%.o: kernel/%.asm
 	@mkdir -p $(dir $@)
@@ -60,11 +61,11 @@ $(BUILD_DIR)/kernel/%.o: kernel/%.asm
 
 $(BUILD_DIR)/bin/%.o: bin/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I kernel -I bin -c -o $@ $<
+	$(CC) $(CFLAGS) $(KERNEL_INCLUDES) -I bin -c -o $@ $<
 
 $(BUILD_DIR)/tui/installer/%.o: tui/installer/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I kernel -I bin -I tui/installer -c -o $@ $<
+	$(CC) $(CFLAGS) $(KERNEL_INCLUDES) -I bin -I tui/installer -c -o $@ $<
 
 # ---------------------------------------------------------------------------
 # Loadable modules
@@ -79,10 +80,10 @@ $(MOD_DIR)/%.mod: FORCE
 	@mkdir -p $(dir $@)
 	@$(MAKE) --no-print-directory $(MOD_DIR)/$*.mod.stage
 
-$(MOD_DIR)/vfs.mod.stage: kernel/vfs.c $(wildcard kernel/*.h) FORCE
+$(MOD_DIR)/vfs.mod.stage: kernel/fs/vfs.c $(wildcard kernel/*/*.h) FORCE
 	@mkdir -p $(dir $@)
 	$(CC) $(MODULE_FLAGS) -DPIUX_MODULE_VFS -DPIUX_MODULE_VERSION=\"1.0.0\" \
-	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel \
+	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" $(KERNEL_INCLUDES) \
 	  -c -o $(MOD_DIR)/vfs.o $<
 	$(LD) -r -m elf_i386 -o $(MOD_DIR)/vfs.mod $(MOD_DIR)/vfs.o
 	@touch $@
@@ -93,33 +94,33 @@ $(MOD_DIR)/commands.mod.stage: $(BUILD_DIR)/modules/commands-src.stamp FORCE
 
 COMMAND_SOURCES := $(filter-out bin/initctl.c,$(wildcard bin/*.c))
 
-$(BUILD_DIR)/modules/commands-src.stamp: $(COMMAND_SOURCES) $(wildcard kernel/*.h) FORCE
+$(BUILD_DIR)/modules/commands-src.stamp: $(COMMAND_SOURCES) $(wildcard kernel/*/*.h) FORCE
 	@mkdir -p $(MOD_DIR)/commands
 	@rm -f $(MOD_DIR)/commands/*.o
 	@for source in $(COMMAND_SOURCES); do \
 	  $(CC) $(MODULE_FLAGS) -DPIUX_MODULE_COMMANDS -DPIUX_MODULE_VERSION=\"1.0.0\" \
-	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel -I bin \
+	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" $(KERNEL_INCLUDES) -I bin \
 	    -c -o $(MOD_DIR)/commands/$$(basename $$source .c).o $$source || exit 1; \
 	done
 	@touch $@
 
-$(MOD_DIR)/net.mod.stage: $(wildcard kernel/arp.c kernel/ip.c kernel/icmp.c kernel/udp.c kernel/tcp.c kernel/dhcp.c kernel/eth.c kernel/net.c) $(wildcard kernel/*.h) FORCE
+$(MOD_DIR)/net.mod.stage: $(wildcard kernel/net/arp.c kernel/net/ip.c kernel/net/icmp.c kernel/net/udp.c kernel/net/tcp.c kernel/net/dhcp.c kernel/net/eth.c kernel/net/net.c) $(wildcard kernel/*/*.h) FORCE
 	@mkdir -p $(MOD_DIR)/net
 	@rm -f $(MOD_DIR)/net/*.o
 	@for source in arp ip icmp udp tcp dhcp eth net; do \
 	  $(CC) $(MODULE_FLAGS) -DPIUX_MODULE_NET -DPIUX_MODULE_VERSION=\"1.0.0\" \
-	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel \
-	    -c -o $(MOD_DIR)/net/$$source.o kernel/$$source.c || exit 1; \
+	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" $(KERNEL_INCLUDES) \
+	    -c -o $(MOD_DIR)/net/$$source.o kernel/net/$$source.c || exit 1; \
 	done
 	$(LD) -r -m elf_i386 -o $(MOD_DIR)/net.mod $(MOD_DIR)/net/arp.o $(MOD_DIR)/net/ip.o \
 	  $(MOD_DIR)/net/icmp.o $(MOD_DIR)/net/udp.o $(MOD_DIR)/net/tcp.o \
 	  $(MOD_DIR)/net/dhcp.o $(MOD_DIR)/net/eth.o $(MOD_DIR)/net/net.o
 	@touch $@
 
-$(MOD_DIR)/installer.mod.stage: tui/installer/installer.c $(wildcard kernel/*.h) FORCE
+$(MOD_DIR)/installer.mod.stage: tui/installer/installer.c $(wildcard kernel/*/*.h) FORCE
 	@mkdir -p $(dir $@)
 	$(CC) $(MODULE_FLAGS) -DPIUX_MODULE_INSTALLER -DPIUX_MODULE_VERSION=\"1.0.0\" \
-	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel -I tui/installer \
+	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" $(KERNEL_INCLUDES) -I tui/installer \
 	  -c -o $(MOD_DIR)/installer.o $<
 	$(LD) -r -m elf_i386 -o $(MOD_DIR)/installer.mod $(MOD_DIR)/installer.o
 	@touch $@
@@ -160,14 +161,14 @@ $(BUILD_DIR)/user/desktop.elf: $(USER_DESKTOP_OBJS) $(USER_APP_OBJS) $(USER_API_
 
 $(BUILD_DIR)/init/init.o: init/init.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I user/lib -c -o $@ $<
+	$(CC) $(CFLAGS) -I user/lib $(KERNEL_INCLUDES) -c -o $@ $<
 
 $(BUILD_DIR)/init/init.elf: $(INIT_OBJ) user/user.ld
 	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(INIT_OBJ)
 
 $(BUILD_DIR)/bin/initctl.o: bin/initctl.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -I user/lib -c -o $@ $<
+	$(CC) $(CFLAGS) -I user/lib $(KERNEL_INCLUDES) -c -o $@ $<
 
 $(BUILD_DIR)/bin/initctl.elf: $(INITCTL_OBJ) user/user.ld
 	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(INITCTL_OBJ)

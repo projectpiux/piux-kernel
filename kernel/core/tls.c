@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "tls.h"
-#include "tcp.h"
+#include "../net/tcp.h"
 
 static int closed;
 

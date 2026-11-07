@@ -1,15 +1,15 @@
 #include <stdint.h>
 #include "syscall.h"
-#include "vfs.h"
+#include "../fs/vfs.h"
 #include "process.h"
 #include "memory.h"
-#include "video.h"
+#include "../video/video.h"
 #include "keyboard.h"
 #include "mouse.h"
 #include "system.h"
 #include "auth.h"
-#include "ext2.h"
-#include "shell.h"
+#include "../fs/ext2.h"
+#include "../video/shell.h"
 #include "vga_log.h"
 
 extern ext2_filesystem_t fs;

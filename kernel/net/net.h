@@ -2,6 +2,6 @@
 #define NET_H
 
 #include <stdint.h>
-#include "net_module.h"
+#include "../core/net_module.h"
 
 #endif

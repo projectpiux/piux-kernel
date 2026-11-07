@@ -4,9 +4,9 @@
 #include <stddef.h>
 #include "module.h"
 #include "ksym.h"
-#include "vfs_core.h"
-#include "ext2.h"
-#include "ramfs.h"
+#include "../fs/vfs_core.h"
+#include "../fs/ext2.h"
+#include "../fs/ramfs.h"
 #include "memory.h"
 
 #define MODULE_FILE_MAX   (256u * 1024u)

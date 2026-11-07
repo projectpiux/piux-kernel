@@ -3,12 +3,12 @@
 #if defined(PIUX_MODULE_VFS)
 
 #include "vfs.h"
-#include "vfs_module.h"
+#include "../core/vfs_module.h"
 #include "ext2.h"
 #include "ata.h"
-#include "keyboard.h"
-#include "auth.h"
-#include "piux_module.h"
+#include "../core/keyboard.h"
+#include "../core/auth.h"
+#include "../core/piux_module.h"
 
 #define PIUX_EXPORT(symbol) ((const void *)(uintptr_t)(symbol))
 

@@ -1,6 +1,6 @@
 #include <stdint.h>
-#include "../kernel/ext2.h"
-#include "../kernel/system.h"
+#include "../kernel/fs/ext2.h"
+#include "../kernel/core/system.h"
 
 typedef void (*vga_puts_t)(const char *);
 typedef void (*vga_putc_t)(char);
