@@ -25,12 +25,12 @@ global _start
 _start:
     mov esp, stack_top
     cli
-    
+
     push ebx
     push eax
-    
+
     call kernel_main
-    
+
     cli
     hlt
     jmp _start

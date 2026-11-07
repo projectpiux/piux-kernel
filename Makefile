@@ -22,6 +22,7 @@ KERNEL_ASM_OBJS := $(BUILD_DIR)/kernel/syscall_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/gdt_flush.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/interrupt_entry.o
 KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/context.o
+KERNEL_ASM_OBJS += $(BUILD_DIR)/kernel/switch.o
 # Subsystems shipped as loadable modules (see kernel/module_abi.h).
 MODULES     := vfs commands net installer
 MODULE_FLAGS := $(CFLAGS) -fno-asynchronous-unwind-tables
@@ -31,7 +32,11 @@ USER_DESKTOP_OBJS := $(patsubst user/desktop/%.c,$(BUILD_DIR)/user/desktop/%.o,$
 USER_APP_SOURCES := $(wildcard user/apps/*.c) $(wildcard user/apps/*/*.c)
 USER_APP_OBJS := $(patsubst user/apps/%.c,$(BUILD_DIR)/user/apps/%.o,$(USER_APP_SOURCES))
 USER_API_OBJ := $(BUILD_DIR)/user/lib/api.o $(BUILD_DIR)/user/lib/pixelfont.o
-USER_PROGRAMS := $(BUILD_DIR)/user/hello.elf $(BUILD_DIR)/user/isolation_test.elf $(BUILD_DIR)/user/desktop.elf
+INIT_OBJ := $(BUILD_DIR)/init/init.o $(BUILD_DIR)/user/lib/api.o $(BUILD_DIR)/user/lib/pixelfont.o $(BUILD_DIR)/user/lib/ustr.o
+INITCTL_OBJ := $(BUILD_DIR)/bin/initctl.o $(BUILD_DIR)/user/lib/api.o $(BUILD_DIR)/user/lib/pixelfont.o $(BUILD_DIR)/user/lib/ustr.o
+USER_PROGRAMS := $(BUILD_DIR)/user/hello.elf $(BUILD_DIR)/user/isolation_test.elf \
+                 $(BUILD_DIR)/user/desktop.elf \
+                 $(BUILD_DIR)/init/init.elf $(BUILD_DIR)/bin/initctl.elf
 
 LOGOS      := $(wildcard kernel/logo/ascii/*/*)
 LOGO_OBJS  := $(patsubst kernel/logo/ascii/%,$(BUILD_DIR)/logo-%.o,$(LOGOS))
@@ -86,10 +91,12 @@ $(MOD_DIR)/commands.mod.stage: $(BUILD_DIR)/modules/commands-src.stamp FORCE
 	$(LD) -r -m elf_i386 -o $(MOD_DIR)/commands.mod $(wildcard $(MOD_DIR)/commands/*.o)
 	@touch $@
 
-$(BUILD_DIR)/modules/commands-src.stamp: $(wildcard bin/*.c) $(wildcard kernel/*.h) FORCE
+COMMAND_SOURCES := $(filter-out bin/initctl.c,$(wildcard bin/*.c))
+
+$(BUILD_DIR)/modules/commands-src.stamp: $(COMMAND_SOURCES) $(wildcard kernel/*.h) FORCE
 	@mkdir -p $(MOD_DIR)/commands
 	@rm -f $(MOD_DIR)/commands/*.o
-	@for source in $(wildcard bin/*.c); do \
+	@for source in $(COMMAND_SOURCES); do \
 	  $(CC) $(MODULE_FLAGS) -DPIUX_MODULE_COMMANDS -DPIUX_MODULE_VERSION=\"1.0.0\" \
 	    -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" -I kernel -I bin \
 	    -c -o $(MOD_DIR)/commands/$$(basename $$source .c).o $$source || exit 1; \
@@ -151,11 +158,43 @@ $(BUILD_DIR)/user/isolation_test.elf: $(BUILD_DIR)/user/isolation_test.o user/us
 $(BUILD_DIR)/user/desktop.elf: $(USER_DESKTOP_OBJS) $(USER_APP_OBJS) $(USER_API_OBJ) $(CURSOR_OBJ) user/user.ld
 	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(USER_DESKTOP_OBJS) $(USER_APP_OBJS) $(USER_API_OBJ) $(CURSOR_OBJ)
 
+$(BUILD_DIR)/init/init.o: init/init.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I user/lib -c -o $@ $<
+
+$(BUILD_DIR)/init/init.elf: $(INIT_OBJ) user/user.ld
+	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(INIT_OBJ)
+
+$(BUILD_DIR)/bin/initctl.o: bin/initctl.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I user/lib -c -o $@ $<
+
+$(BUILD_DIR)/bin/initctl.elf: $(INITCTL_OBJ) user/user.ld
+	$(LD) -T user/user.ld -m elf_i386 -nostdlib -o $@ $(INITCTL_OBJ)
+
 user-programs: $(USER_PROGRAMS)
 
 install-user-programs: $(DISK) $(USER_PROGRAMS) $(MODULE_FILES)
+	@for dir in /bin /usr /usr/bin /lib /lib/modules /etc /home /root /tmp /var /var/log /var/tmp; do \
+	  debugfs -w -R "mkdir $$dir" $(DISK) >/dev/null 2>&1 || true; \
+	done
 	debugfs -w -R "rm /desktop.elf" $(DISK) >/dev/null 2>&1 || true
-	debugfs -w -R "write $(BUILD_DIR)/user/desktop.elf /desktop.elf" $(DISK)
+	debugfs -w -R "rm /bin/desktop.elf" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/user/desktop.elf /bin/desktop.elf" $(DISK)
+	debugfs -w -R "rm /usr/bin/hello" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/user/hello.elf /usr/bin/hello" $(DISK)
+	debugfs -w -R "rm /usr/bin/isolation-test" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/user/isolation_test.elf /usr/bin/isolation-test" $(DISK)
+	debugfs -w -R "mkdir /sbin" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "rm /sbin/init.elf" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/init/init.elf /sbin/init.elf" $(DISK)
+	debugfs -w -R "rm /usr/bin/initctl" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "write $(BUILD_DIR)/bin/initctl.elf /usr/bin/initctl" $(DISK)
+	debugfs -w -R "mkdir /etc" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "mkdir /etc/piux" $(DISK) >/dev/null 2>&1 || true
+	debugfs -w -R "rm /etc/piux/init.conf" $(DISK) >/dev/null 2>&1 || true
+	echo -e "# Piux init configuration\n\n[STARTUP]\npde\n\n[SERVICE:net]\ntype = oneshot\n\n" > $(BUILD_DIR)/init.conf.tmp
+	debugfs -w -R "write $(BUILD_DIR)/init.conf.tmp /etc/piux/init.conf" $(DISK)
 	for module in $(MODULE_FILES); do \
 	  debugfs -w -R "mkdir /lib" $(DISK) >/dev/null 2>&1 || true; \
 	  debugfs -w -R "mkdir /lib/modules" $(DISK) >/dev/null 2>&1 || true; \

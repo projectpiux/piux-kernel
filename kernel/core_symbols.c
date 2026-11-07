@@ -37,7 +37,6 @@ static const char *const core_symbol_names[] = {
 
     "timer_ticks",
 
-
     "ext2_mount", "ext2_is_mounted", "ext2_read_block", "ext2_write_block",
     "ext2_read_inode", "ext2_find_inode", "ext2_find_inode_in_dir",
     "ext2_find_inode_by_path", "ext2_read_file", "ext2_read_file_range",
@@ -68,7 +67,9 @@ static const char *const core_symbol_names[] = {
     "vga_puts", "vga_putc", "vga_clear",
 
     "process_exec", "process_getpid", "process_getuid", "process_yield",
-    "process_create", "process_schedule_once",
+    "process_spawn_user", "process_spawn_and_wait", "process_wait", "process_exit",
+    "process_schedule", "process_ipc_send", "process_ipc_recv", "process_get_args",
+    "process_enable_scheduler", "process_idle_yield", "process_pid1_alive",
 
     "net_htons", "net_htonl", "net_checksum",
     "net_parse_ip", "net_resolve_host", "net_format_ip",
@@ -137,7 +138,12 @@ static const void *const core_symbol_addresses[] = {
     PIUX_EXPORT(vga_puts), PIUX_EXPORT(vga_putc), PIUX_EXPORT(vga_clear),
     PIUX_EXPORT(process_exec), PIUX_EXPORT(process_getpid),
     PIUX_EXPORT(process_getuid), PIUX_EXPORT(process_yield),
-    PIUX_EXPORT(process_create), PIUX_EXPORT(process_schedule_once),
+    PIUX_EXPORT(process_spawn_user), PIUX_EXPORT(process_spawn_and_wait),
+    PIUX_EXPORT(process_wait), PIUX_EXPORT(process_exit),
+    PIUX_EXPORT(process_schedule), PIUX_EXPORT(process_ipc_send),
+    PIUX_EXPORT(process_ipc_recv), PIUX_EXPORT(process_get_args),
+    PIUX_EXPORT(process_enable_scheduler), PIUX_EXPORT(process_idle_yield),
+    PIUX_EXPORT(process_pid1_alive),
     PIUX_EXPORT(net_htons), PIUX_EXPORT(net_htonl), PIUX_EXPORT(net_checksum),
     PIUX_EXPORT(net_parse_ip), PIUX_EXPORT(net_resolve_host),
     PIUX_EXPORT(net_format_ip),

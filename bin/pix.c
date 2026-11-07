@@ -9,7 +9,6 @@
 typedef void (*vga_puts_t)(const char*);
 typedef void (*vga_putc_t)(char);
 
-/* GitHub tree URL for packages; downloads use its raw.githubusercontent.com equivalent. */
 #define PIX_REPOSITORY "https://github.com/projectpiux/pix-pkgmanager/tree/main/pkgs"
 #define PIX_HOST "raw.githubusercontent.com"
 #define PIX_PORT 443

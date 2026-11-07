@@ -185,6 +185,103 @@ void memory_address_space_destroy(memory_address_space_t *address_space) {
     address_space->directory = 0;
 }
 
+static int user_map_into(uint32_t *directory, uint32_t address, uint32_t size, int writable) {
+    uint32_t start, end;
+    if (!size || address + size < address) return -1;
+    end = address + size;
+    if (address < USER_SPACE_BASE || end > USER_SPACE_TOP) return -1;
+    start = address & ~(PAGE_SIZE - 1);
+    end = align_up(end);
+    for (uint32_t page = start; page < end; page += PAGE_SIZE) {
+        uint32_t directory_index = page >> 22;
+        uint32_t table_index = (page >> 12) & 0x3ff;
+        uint32_t *table;
+        uint32_t frame;
+        if (!(directory[directory_index] & PAGE_PRESENT)) {
+            frame = allocate_frame();
+            if (!frame) return -1;
+            table = (uint32_t *)(uintptr_t)frame;
+            for (uint32_t index = 0; index < PAGE_ENTRIES; index++) table[index] = 0;
+            directory[directory_index] = frame | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
+        } else {
+            if (!(directory[directory_index] & PAGE_USER)) return -1;
+            table = table_for(directory, page);
+        }
+        if (!(table[table_index] & PAGE_PRESENT)) {
+            frame = allocate_frame();
+            if (!frame) return -1;
+            uint8_t *bytes = (uint8_t *)(uintptr_t)frame;
+            for (uint32_t index = 0; index < PAGE_SIZE; index++) bytes[index] = 0;
+            table[table_index] = frame | PAGE_PRESENT | PAGE_USER |
+                                 (writable ? PAGE_WRITABLE : 0);
+        } else if (writable) {
+            table[table_index] |= PAGE_WRITABLE;
+        }
+    }
+    return 0;
+}
+
+static int user_protect_into(uint32_t *directory, uint32_t address, uint32_t size, int writable) {
+    uint32_t end;
+    if (!size || address + size < address) return -1;
+    end = address + size;
+    if (address < USER_SPACE_BASE || end > USER_SPACE_TOP) return -1;
+    for (uint32_t page = address & ~(PAGE_SIZE - 1); page < end; page += PAGE_SIZE) {
+        if (!(directory[page >> 22] & PAGE_USER)) return -1;
+        uint32_t *table = table_for(directory, page);
+        uint32_t *entry;
+        if (!table) return -1;
+        entry = &table[(page >> 12) & 0x3ff];
+        if ((*entry & (PAGE_PRESENT | PAGE_USER)) != (PAGE_PRESENT | PAGE_USER)) return -1;
+        if (writable) *entry |= PAGE_WRITABLE;
+        else *entry &= ~PAGE_WRITABLE;
+    }
+    return 0;
+}
+
+int memory_user_map_into(const memory_address_space_t *address_space, uint32_t address,
+                         uint32_t size, int writable) {
+    if (!address_space || !address_space->directory) return -1;
+    return user_map_into(address_space->directory, address, size, writable);
+}
+
+int memory_user_protect_into(const memory_address_space_t *address_space, uint32_t address,
+                             uint32_t size, int writable) {
+    if (!address_space || !address_space->directory) return -1;
+    return user_protect_into(address_space->directory, address, size, writable);
+}
+
+int memory_user_copy_into(const memory_address_space_t *address_space, uint32_t user_address,
+                          const void *kernel_buffer, uint32_t size) {
+    if (!address_space || !address_space->directory || !kernel_buffer) return -1;
+    if (user_address < USER_SPACE_BASE || user_address + size < user_address ||
+        user_address + size > USER_SPACE_TOP) return -1;
+    {
+        const uint8_t *source = kernel_buffer;
+        uint32_t offset = 0;
+        while (offset < size) {
+            uint32_t page = (user_address + offset) & ~(PAGE_SIZE - 1);
+            uint32_t page_offset = (user_address + offset) - page;
+            uint32_t chunk = PAGE_SIZE - page_offset;
+            uint32_t *table;
+            uint32_t entry;
+            if (page + PAGE_SIZE > USER_SPACE_TOP) chunk = size - offset;
+            if (chunk > size - offset) chunk = size - offset;
+            if (!(address_space->directory[page >> 22] & PAGE_PRESENT)) return -1;
+            table = table_for(address_space->directory, page);
+            if (!table) return -1;
+            entry = table[(page >> 12) & 0x3ff];
+            if (!(entry & PAGE_PRESENT)) return -1;
+            {
+                uint8_t *destination = (uint8_t *)(uintptr_t)((entry & PAGE_ADDRESS) + page_offset);
+                for (uint32_t index = 0; index < chunk; index++) destination[index] = source[offset + index];
+            }
+            offset += chunk;
+        }
+    }
+    return 0;
+}
+
 int memory_user_map(uint32_t address, uint32_t size, int writable) {
     uint32_t start, end;
     uint32_t *directory = active_directory();

@@ -49,6 +49,60 @@ int user_shell_execute(const char *command, char *output, uint32_t capacity) {
                           (uint32_t)(uintptr_t)output, capacity);
 }
 
+int user_spawn(const char *path, const char *args) {
+    return syscall_invoke(SYS_SPAWN, (uint32_t)(uintptr_t)path,
+                          (uint32_t)(uintptr_t)args, 0);
+}
+
+int user_wait(int pid, int *status) {
+    return syscall_invoke(SYS_WAIT, (uint32_t)pid, 1, (uint32_t)(uintptr_t)status);
+}
+
+int user_wait_nonblocking(int *status) {
+    return syscall_invoke(SYS_WAIT, 0xffffffffu, 0, (uint32_t)(uintptr_t)status);
+}
+
+int user_getpid(void) {
+    return syscall_invoke(SYS_GETPID, 0, 0, 0);
+}
+
+int user_ipc_recv(void *message) {
+    return syscall_invoke(SYS_IPC, 0, (uint32_t)(uintptr_t)message, 0);
+}
+
+int user_ipc_try_recv(void *message) {
+    return syscall_invoke(SYS_IPC, 2, (uint32_t)(uintptr_t)message, 0);
+}
+
+int user_ipc_send(int target_pid, const void *message) {
+    return syscall_invoke(SYS_IPC, 1, (uint32_t)(uintptr_t)message, (uint32_t)target_pid);
+}
+
+void user_getargs(char *buffer, uint32_t capacity) {
+    syscall_invoke(SYS_GETARGS, (uint32_t)(uintptr_t)buffer, capacity, 0);
+}
+
+void user_exit(int status) {
+    syscall_invoke(SYS_EXIT, (uint32_t)status, 0, 0);
+    for (;;) { }
+}
+
+int user_write(const char *buffer, int length) {
+    return syscall_invoke(SYS_WRITE, 1, (uint32_t)(uintptr_t)buffer, (uint32_t)length);
+}
+
+int user_open(const char *path, int flags) {
+    return syscall_invoke(SYS_OPEN, (uint32_t)(uintptr_t)path, (uint32_t)flags, 0);
+}
+
+int user_read(int fd, void *buffer, int length) {
+    return syscall_invoke(SYS_READ, (uint32_t)fd, (uint32_t)(uintptr_t)buffer, (uint32_t)length);
+}
+
+int user_close(int fd) {
+    return syscall_invoke(SYS_CLOSE, (uint32_t)fd, 0, 0);
+}
+
 void video_clear(void) {
     flush_video_batch();
     syscall_invoke(SYS_VIDEO_CLEAR, 0, 0, 0);
@@ -127,7 +181,6 @@ int mouse_poll(mouse_event_t *event) {
     return syscall_invoke(SYS_MOUSE_POLL, (uint32_t)(uintptr_t)event, 0, 0);
 }
 
-/* Testo a pixel con il font condiviso 6x13, scalabile. scale=2 -> 12x26. */
 void pixel_draw_text_scaled(int x, int y, const char *text, uint32_t color, int scale) {
     int advance;
     if (!text || scale < 1) return;
@@ -136,7 +189,7 @@ void pixel_draw_text_scaled(int x, int y, const char *text, uint32_t color, int 
         for (int row = 0; row < PIXFONT_HEIGHT; row++) {
             for (int column = 0; column < PIXFONT_WIDTH; column++) {
                 if (pixfont_pixel(text[index], column, row)) {
-                    /* blocco scale x scale per pixel del glifo */
+
                     video_fill_rect(x + index * advance + column * scale,
                                     y + row * scale, scale, scale, color, 255);
                 }

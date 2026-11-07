@@ -4,9 +4,6 @@
 #include "pixelgfx.h"
 #include "pixelfont.h"
 
-/* Taskbar in pixel nativi: fascia alta TASKBAR_HEIGHT px sul fondo schermo,
-   logo cliccabile a sinistra, pulsanti finestra, hint a destra. */
-
 #define TASKBAR_HEIGHT       26
 #define TASKBAR_LOGO_WIDTH   84
 #define TASKBAR_TEXT_PAD     6

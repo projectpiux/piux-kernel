@@ -41,7 +41,6 @@ static void append_str(char *dest, int *length, const char *src) {
     dest[*length] = '\0';
 }
 
-/* Splits param on spaces into up to max_tokens words of at most 63 chars each. */
 static int split_tokens(const char *input, char tokens[][64], int max_tokens) {
     int count = 0;
     int index = 0;
@@ -340,7 +339,7 @@ void cmd_net(const char *param, vga_puts_t vga_puts, vga_putc_t vga_putc) {
         rtl8139_get_mac(mac);
         for (int index = 0; index < 6; index++) frame[6 + index] = mac[index];
         frame[12] = 0x88;
-        frame[13] = 0xB5; /* IEEE 802 experimental ethertype, used here as a raw test frame marker */
+        frame[13] = 0xB5; 
         for (uint16_t index = 0; index < payload_length; index++) frame[14 + index] = (uint8_t)payload[index];
 
         frame_length = (uint16_t)(14 + payload_length);

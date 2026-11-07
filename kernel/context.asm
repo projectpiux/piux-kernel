@@ -3,7 +3,7 @@ BITS 32
 section .text
 global process_context_save
 global process_context_restore
-global process_enter_user_mode
+extern process_exit
 
 process_context_save:
     mov eax, [esp+4]
@@ -23,7 +23,6 @@ process_context_save:
 
 process_context_restore:
     mov eax, [esp+4]
-    mov edx, [esp+8]
     mov ebp, [eax+8]
     mov ebx, [eax+12]
     mov esi, [eax+16]
@@ -33,12 +32,10 @@ process_context_restore:
     mov eax, [eax+24]
     push eax
     popfd
-    and edx, 0xffff8fff
-    or edx, 0x2
-    mov eax, edx
+    mov eax, 1
     jmp ecx
 
-process_enter_user_mode:
+process_start_user:
     mov eax, [esp+4]
     mov ecx, [esp+8]
     mov dx, 0x23

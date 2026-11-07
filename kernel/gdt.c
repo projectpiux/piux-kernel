@@ -79,3 +79,8 @@ void gdt_init(void) {
     gdt_flush((uint32_t)(uintptr_t)&pointer);
     asm volatile ("ltr %%ax" : : "a"((uint16_t)0x28));
 }
+
+void gdt_set_esp0(uint32_t esp0) {
+    task_state.esp0 = esp0;
+    task_state.ss0 = 0x10;
+}

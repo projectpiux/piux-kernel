@@ -1,4 +1,4 @@
-/* Numix 0.0.1 - comando kernel per piux (bin/numix.c)*/
+
 
 typedef void (*nx_puts_t)(const char *);
 typedef void (*nx_putc_t)(char);
@@ -7,8 +7,8 @@ typedef void (*nx_putc_t)(char);
 #define NX_GH       "https://github.com/hi-its-matte"
 #define NX_MAXDEPTH 64
 
-static const char *p;    /* cursore */
-static const char *err;  /* primo errore, 0 se ok */
+static const char *p;    
+static const char *err;  
 static int depth;
 
 static int expr(void);
@@ -111,7 +111,7 @@ static int term(void) {
             continue;
         }
         if (b == 0) { err = "division by zero"; break; }
-        if (b == -1) { /* evita il trap di INT_MIN / -1 */
+        if (b == -1) { 
             if (c == '%') a = 0;
             else if (__builtin_sub_overflow(0, a, &a)) { err = "overflow"; break; }
             continue;
@@ -119,10 +119,10 @@ static int term(void) {
         q = a / b;
         r = a % b;
         if (c == '%') {
-            if (r != 0 && (r ^ b) < 0) r += b;   /* segno del divisore */
+            if (r != 0 && (r ^ b) < 0) r += b;   
             a = r;
         } else {
-            if (fl && r != 0 && (r ^ b) < 0) q--; /* floor per // */
+            if (fl && r != 0 && (r ^ b) < 0) q--; 
             a = q;
         }
     }

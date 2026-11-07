@@ -21,6 +21,15 @@ static int read_aux(uint8_t *value) {
     return 1;
 }
 
+static int read_aux_atomic(uint8_t *value) {
+    uint32_t flags;
+    int result;
+    asm volatile ("pushfl\n\tpopl %0\n\tcli" : "=r"(flags));
+    result = read_aux(value);
+    asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
+    return result;
+}
+
 static int read_controller(uint8_t *value) {
     if (!(inb(0x64) & 1) || (inb(0x64) & 0x20)) return 0;
     *value = inb(0x60);
@@ -83,20 +92,23 @@ void mouse_init(void) {
 
 void mouse_irq_handler(void) {
     uint8_t value;
-    if (!read_aux(&value)) return;
-    if (packet_index == 0 && !(value & 0x08)) return;
-    packet[packet_index++] = value;
-    if (packet_index < packet_length) return;
-    packet_index = 0;
-    {
-        uint8_t next_write = (uint8_t)((queue_write + 1) % MOUSE_QUEUE_SIZE);
-        if (next_write == queue_read) return;
-        event_queue[queue_write].buttons = packet[0] & 0x07;
-        event_queue[queue_write].dx = (int8_t)packet[1];
-        event_queue[queue_write].dy = (int8_t)packet[2];
-        event_queue[queue_write].wheel = packet_length == 4 ? (int8_t)(packet[3] & 0x0F) : 0;
-        if (event_queue[queue_write].wheel & 0x08) event_queue[queue_write].wheel |= (int8_t)0xF0;
-        queue_write = next_write;
+
+    for (int drained = 0; drained < 64; drained++) {
+        if (!read_aux_atomic(&value)) break;
+        if (packet_index == 0 && !(value & 0x08)) continue;
+        packet[packet_index++] = value;
+        if (packet_index < packet_length) continue;
+        packet_index = 0;
+        {
+            uint8_t next_write = (uint8_t)((queue_write + 1) % MOUSE_QUEUE_SIZE);
+            if (next_write == queue_read) continue;
+            event_queue[queue_write].buttons = packet[0] & 0x07;
+            event_queue[queue_write].dx = (int8_t)packet[1];
+            event_queue[queue_write].dy = (int8_t)packet[2];
+            event_queue[queue_write].wheel = packet_length == 4 ? (int8_t)(packet[3] & 0x0F) : 0;
+            if (event_queue[queue_write].wheel & 0x08) event_queue[queue_write].wheel |= (int8_t)0xF0;
+            queue_write = next_write;
+        }
     }
 }
 

@@ -324,20 +324,20 @@ static int report_step(const char *label, int result) {
 
 static int create_system_tree(void) {
     static const char *directories[] = {
-        "/.config", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/mnt",
-        "/opt", "/proc", "/root", "/run", "/sbin", "/tmp", "/usr",
-        "/var", "/var/log", "/var/tmp"
+        "/.config", "/bin", "/boot", "/dev", "/etc", "/etc/piux", "/home", "/lib",
+        "/lib/modules", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin",
+        "/tmp", "/usr", "/usr/bin", "/var", "/var/log", "/var/tmp"
     };
     int count = sizeof(directories) / sizeof(directories[0]);
     for (int i = 0; i < count; i++) {
         if (report_step(directories[i], ensure_directory(directories[i])) < 0) return -1;
     }
     if (report_step("/.config/system.conf",
-            write_config("/.config/system.conf", "root=/dev/hda\nfilesystem=ext2\ninit=/sbin/init\n")) < 0) return -1;
+            write_config("/.config/system.conf", "root=/dev/hda\nfilesystem=ext2\ninit=/sbin/init.elf\n")) < 0) return -1;
     if (report_step("/.config/disk.conf",
             write_config("/.config/disk.conf", "device=/dev/hda\nfilesystem=ext2\nmountpoint=/\n")) < 0) return -1;
-    if (report_step("/sbin/init",
-            write_config("/sbin/init", "# Piux init: a basic init file.\n# Use hashtags for comments or disabled commands.\n# Enjoy!\n\n[STARTUP]\npde\n\n")) < 0) return -1;
+    if (report_step("/etc/piux/init.conf",
+            write_config("/etc/piux/init.conf", "# Piux init configuration.\n# Use hashtags for comments or disabled commands.\n\n[STARTUP]\npde\n\n")) < 0) return -1;
     if (report_step("/etc/fstab",
             write_new_file("/etc/fstab", "/dev/hda / ext2 defaults 0 1\n")) < 0) return -1;
     return 0;
@@ -495,9 +495,6 @@ int installer_run(installer_clear_t clear, installer_puts_t puts,
     if (complete_installation() < 0) return 0;
     return 1;
 }
-/* ------------------------------------------------------------------ */
-/* Module interface: "installer"                                        */
-/* ------------------------------------------------------------------ */
 
 #if defined(PIUX_MODULE_INSTALLER)
 
@@ -528,4 +525,4 @@ PIUX_MODULE(
 
 #endif
 
-#endif /* PIUX_MODULE_INSTALLER */
+#endif 

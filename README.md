@@ -179,7 +179,7 @@ Piux ships with PDE, a mouse- and keyboard-driven desktop whose interface and re
 
 **Filesystem.** Everything is exposed through a Unix-like VFS with file descriptors and device nodes such as `/dev/console` and `/dev/hda`. The ext2 driver is non-journaled and supports direct, single- and double-indirect blocks, file creation, reading, writing and deletion. Without a disk, Piux falls back to RAMFS.
 
-**Processes.** The kernel provides `int 0x80` syscalls, a kernel/user GDT with TSS, and isolated page directories for synchronous ring3 ELF execution. PDE and its registered apps run from `desktop.elf` in user mode; the shell, installer, and `process_create` callbacks remain kernel-side. There is not yet a scheduler for independent user processes.
+**Processes.** The kernel provides `int 0x80` syscalls, a kernel/user GDT with TSS, isolated page directories and a preemptive round-robin scheduler for ring3 ELF processes. `/sbin/init.elf` runs as PID 1 and is controlled by `initctl` over the PIUX-IPC/1 mailbox protocol (`docs/INIT.md`); if init is missing the kernel starts a recovery shell. The desktop terminal invokes kernel shell handlers through a checked syscall rather than running each command as a separate user process.
 
 **Modules.** The core binary is small on purpose: the VFS, the command table, the network stack and the installer are built as relocatable modules (`/lib/modules/*.mod`) that the kernel links into itself at boot through its own ELF loader and kernel-symbol table. They run in kernel mode, in the same address space, but are versioned, dependency-ordered and reloadable — a monolithic kernel with a clean core/module boundary. See `docs/MODULES.md`.
 

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "desktop.h"
+#include "../../kernel/syscall.h"
 #include "app_registry.h"
 #include "launcher.h"
 #include "taskbar.h"
@@ -79,7 +80,7 @@ static int point_in_window(const desktop_window_t *window, int x, int y) {
 }
 
 static void sync_content(desktop_window_t *window) {
-    /* contenuto = area interna al bordo, sotto la barra titolo, IN PIXEL */
+
     window->context.content.x = window->x + DESKTOP_BORDER;
     window->context.content.y = window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H;
     window->context.content.width = window->width - DESKTOP_BORDER * 2;
@@ -107,7 +108,6 @@ static void z_raise(int index) {
     z_remove(index);
     if (z_count < DESKTOP_MAX_WINDOWS) z_order[z_count++] = index;
 }
-
 
 static int topmost_visible(int exclude) {
     for (int k = z_count - 1; k >= 0; k--) {
@@ -155,8 +155,6 @@ static void collect_cover(void) {
     }
 }
 
-/* (rimossa la copertura a celle: il wallpaper è ora a fasce pixel) */
-
 static void draw_wallpaper_region(int x, int y, int width, int height) {
     int right = x + width;
     int bottom = y + height;
@@ -166,17 +164,16 @@ static void draw_wallpaper_region(int x, int y, int width, int height) {
     if (right > video_pixel_width) right = video_pixel_width;
     if (bottom > desktop_height) bottom = desktop_height;
     if (right <= x || bottom <= y) return;
-    /* sfumatura a fasce orizzontali in pixel (nessuna griglia) */
+
     for (int row = y; row < bottom; row += 4) {
         int band_bottom = row + 4;
         if (band_bottom > bottom) band_bottom = bottom;
         uint32_t color = row < desktop_height / 2 ? 0x0C1C30u : 0x101828u;
         if (row >= desktop_height / 2 - 24 && row < desktop_height / 2)
-            color = 0x14243C;  /* frangia di transizione */
+            color = 0x14243C;  
         pixel_fill_rect(x, row, right - x, band_bottom - row, color);
     }
-    /* il testo del wallpaper si disegna solo in full draw (non nei drag frame
-       parziali, dove sovrapporrebbe le finestre) */
+
     if (x == 0 && y == 0 && width == video_pixel_width && height >= desktop_height) {
         if (desktop_height > 60) {
             pixel_draw_text(16, 12, wallpaper_brand, 0xBFDFFFu);
@@ -194,10 +191,10 @@ static void draw_window(int index) {
     uint32_t title_bg    = active ? 0x0B60B0u : 0x282828u;
     uint32_t close_bg    = active ? 0xB02020u : 0x602020u;
     if (!window_visible(window)) return;
-    /* corpo: riempimento scuro + bordo pieno in pixel */
+
     pixel_fill_rect(window->x, window->y, width, height, 0x101010u);
     pixel_draw_rect_border(window->x, window->y, width, height, DESKTOP_BORDER, frame_color);
-    /* barra titolo */
+
     pixel_fill_rect(window->x + DESKTOP_BORDER, window->y + DESKTOP_BORDER,
                     width - DESKTOP_BORDER * 2, DESKTOP_TITLEBAR_H, title_bg);
     {
@@ -211,7 +208,7 @@ static void draw_window(int index) {
         for (int k = 0; k < chars; k++) name[k] = window->application->name[k];
         pixel_draw_text(window->x + DESKTOP_BORDER + 8, text_y, name, 0xFFFFFFu);
     }
-    /* minimizza e chiudi: quadratini in pixel, coerenti con gli hit-test */
+
     pixel_fill_rect(window->x + width - DESKTOP_BORDER - 54, window->y + DESKTOP_BORDER + 11, 16, 3, 0xFFFFFFu);
     pixel_fill_rect(window->x + width - DESKTOP_BORDER - 32, window->y + DESKTOP_BORDER + 5, 16, 16, close_bg);
     pixel_draw_text(window->x + width - DESKTOP_BORDER - 29, window->y + DESKTOP_BORDER + 2, "x", 0xFFFFFFu);
@@ -474,7 +471,7 @@ static void handle_window_press(const mouse_event_t *event) {
     if (index < 0) return;
     focus_window(index);
     window = &windows[index];
-    /* chiudi: quadratino in alto a destra della barra titolo */
+
     if (cursor_pixel_y >= window->y + DESKTOP_BORDER &&
         cursor_pixel_y < window->y + DESKTOP_BORDER + DESKTOP_TITLEBAR_H &&
         cursor_pixel_x >= window->x + window->width - DESKTOP_BORDER - 36 &&
@@ -530,7 +527,7 @@ static int handle_mouse_event(const mouse_event_t *event) {
     int left_down = (event->buttons & MOUSE_BUTTON_LEFT) != 0;
     int pressed = left_down && !(cursor_buttons & MOUSE_BUTTON_LEFT);
     int next_x = cursor_pixel_x + event->dx;
-    int next_y = cursor_pixel_y - event->dy;
+    int next_y = cursor_pixel_y - event->dy;  
     int redraw = 0;
     if (next_x < 0) next_x = 0;
     if (next_y < 0) next_y = 0;
@@ -541,7 +538,7 @@ static int handle_mouse_event(const mouse_event_t *event) {
     if (drag_window >= 0 && left_down) redraw |= update_drag();
     if (resize_window >= 0 && left_down) redraw |= update_resize();
     if (!left_down && (drag_window >= 0 || resize_window >= 0)) {
-        /* fine drag/resize: ridisegno completo per ripulire qualsiasi residuo */
+
         drag_window = -1;
         resize_window = -1;
         redraw |= REDRAW_FULL;
@@ -554,7 +551,7 @@ static int handle_mouse_event(const mouse_event_t *event) {
         drag_window = -1;
         resize_window = -1;
     }
-    if (event->wheel && !launcher_is_open()) {  /* (release gestito sopra) */
+    if (event->wheel && !launcher_is_open()) {  
         int target = top_window_at(cursor_pixel_x, cursor_pixel_y);
         if (target < 0) target = active_window;
         if (target >= 0 && windows[target].open) {
@@ -660,7 +657,7 @@ int desktop_run(void) {
         }
         if (!desktop_active) break;
         if (activity) present_frame(redraw);
-        else cpu_relax();
+        else { syscall_invoke(SYS_YIELD, 0, 0, 0); cpu_relax(); }
     }
     for (int index = 0; index < window_count; index++)
         if (windows[index].open) close_window(index);

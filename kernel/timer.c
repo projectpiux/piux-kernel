@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "timer.h"
 #include "io.h"
+#include "process.h"
 
 static volatile uint32_t ticks;
 
@@ -32,4 +33,8 @@ void timer_init(uint32_t frequency) {
 }
 
 uint32_t timer_ticks(void) { return ticks; }
-void timer_tick(void) { ticks++; }
+void timer_tick(void) {
+    ticks++;
+
+    if (ticks % 2 == 0) process_idle_yield();
+}

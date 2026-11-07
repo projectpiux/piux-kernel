@@ -9,7 +9,6 @@ typedef void (*installer_clear_t)(void);
 typedef void (*installer_power_off_t)(void);
 typedef void (*installer_reboot_t)(void);
 
-/* Provided by the "installer" module; resolved at load time. */
 int installer_run(installer_clear_t clear,
                   installer_puts_t puts,
                   installer_putc_t putc,

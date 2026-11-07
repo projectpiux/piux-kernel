@@ -11,7 +11,7 @@ void cmd_touch(const char *filename, vga_puts_t vga_puts, vga_putc_t vga_putc) {
         vga_puts("Usage: touch <filename>\n");
         return;
     }
-    
+
     int result = ext2_is_mounted() ? ext2_create_file_by_path(filename) : ramfs_create_file(filename);
     if (result >= 0) {
         vga_puts("File created: ");

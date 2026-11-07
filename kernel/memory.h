@@ -22,6 +22,12 @@ int memory_address_space_create(memory_address_space_t *address_space);
 void memory_address_space_activate(const memory_address_space_t *address_space);
 void memory_address_space_destroy(memory_address_space_t *address_space);
 int memory_user_map(uint32_t address, uint32_t size, int writable);
+int memory_user_map_into(const memory_address_space_t *address_space, uint32_t address,
+                         uint32_t size, int writable);
+int memory_user_protect_into(const memory_address_space_t *address_space, uint32_t address,
+                             uint32_t size, int writable);
+int memory_user_copy_into(const memory_address_space_t *address_space, uint32_t user_address,
+                          const void *kernel_buffer, uint32_t size);
 int memory_user_protect(uint32_t address, uint32_t size, int writable);
 int paging_enabled(void);
 

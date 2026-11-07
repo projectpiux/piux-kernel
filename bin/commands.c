@@ -27,6 +27,7 @@ static const command_t commands[] = {
     { "reboot", cmd_reboot },
     { "top", cmd_top },
     { "run", cmd_run },
+    { "initctl", cmd_initctl },
     { "pde", cmd_desktop },
     { "desktop", cmd_desktop },
     { "net", cmd_net },

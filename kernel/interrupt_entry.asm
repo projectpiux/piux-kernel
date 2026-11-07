@@ -2,6 +2,7 @@ BITS 32
 
 section .text
 extern timer_tick
+extern process_timer_tick
 extern outb
 extern mouse_irq_handler
 extern exception_dispatch

@@ -6,7 +6,6 @@
 #define TERMINAL_LINE_LENGTH 120
 #define TERMINAL_MAX_INPUT 80
 
-/* compact text metrics derived from the actual framebuffer font */
 #define PIXEL_CHAR_ADVANCE (PIXFONT_WIDTH + PIXFONT_SCALE)
 #define PIXEL_LINE_HEIGHT  (PIXFONT_HEIGHT + 2)
 
@@ -113,13 +112,13 @@ static void terminal_render(app_context_t *context) {
     int first;
     int chars_per_line;
     if (!state) return;
-    /* metrica dal rect pixel reale */
+
     chars_per_line = (context->content.width - 6) / PIXEL_CHAR_ADVANCE;
     if (chars_per_line >= TERMINAL_LINE_LENGTH) chars_per_line = TERMINAL_LINE_LENGTH - 1;
     state->line_width = chars_per_line;
     visible = (context->content.height - 6) / PIXEL_LINE_HEIGHT;
     if (visible <= 0) return;
-    /* pulisci TUTTO il contenuto in pixel, poi disegna ogni riga col font pixel */
+
     pixel_fill_rect(context->content.x, context->content.y,
                     context->content.width, context->content.height, 0x000000u);
     first = state->line_count - visible;

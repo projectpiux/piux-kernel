@@ -6,8 +6,6 @@
 #include "../lib/api.h"
 #include "pixelgfx.h"
 
-/* Launcher in pixel nativi, ancorato in basso a sinistra sopra la taskbar. */
-
 #define LAUNCHER_WIDTH     250
 #define LAUNCHER_ITEM_H    22
 #define LAUNCHER_HEADER_H  22
@@ -49,7 +47,7 @@ int launcher_hit_test(int x, int y) {
     int items_bottom = top + LAUNCHER_HEADER_H + app_registry_count() * LAUNCHER_ITEM_H;
     if (!open || x < 0 || x >= width || y < top ||
         y >= items_bottom + LAUNCHER_FOOTER_H) return -1;
-    if (y < top + LAUNCHER_HEADER_H) return -2;          /* header: chiudi */
+    if (y < top + LAUNCHER_HEADER_H) return -2;          
     if (y < items_bottom) return (y - top - LAUNCHER_HEADER_H) / LAUNCHER_ITEM_H;
     return -1;
 }

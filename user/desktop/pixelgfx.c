@@ -2,8 +2,6 @@
 #include "pixelgfx.h"
 #include "../lib/api.h"
 
-/* Primitive rettangolari per il desktop. pixel_fill_rect sta in api.h. */
-
 void pixel_draw_rect_border(int x, int y, int width, int height, int thickness,
                             uint32_t color) {
     if (width <= 0 || height <= 0 || thickness <= 0) return;

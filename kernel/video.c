@@ -1,4 +1,5 @@
 #include "video.h"
+#include "vga_log.h"
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
 #define MULTIBOOT_INFO_FRAMEBUFFER (1u << 12)
@@ -641,8 +642,6 @@ static int bga_set_mode(uint32_t width, uint32_t height, uint8_t bpp, struct vid
     if (width < 320 || height < 200 || width > 0xFFFF || height > 0xFFFF) return 0;
     if (bpp != 15 && bpp != 16 && bpp != 24 && bpp != 32) return 0;
 
-
-
     command = pci_read32(gpu_info.bus, gpu_info.slot, gpu_info.func, 0x04) & 0xFFFFu;
     if (!(command & 2u))
         pci_write32(gpu_info.bus, gpu_info.slot, gpu_info.func, 0x04, command | 2u);
@@ -837,14 +836,22 @@ void video_init(uint32_t magic, uint32_t multiboot_address) {
     gpu_present = pci_find_display(&gpu_info);
     select_driver();
 
-    if (magic != MULTIBOOT_BOOTLOADER_MAGIC || multiboot_address == 0) return;
+    if (magic != MULTIBOOT_BOOTLOADER_MAGIC || multiboot_address == 0) {
+        vga_log_warn("no multiboot framebuffer info (magic=0x%x)", magic);
+        return;
+    }
     info = (const struct multiboot_info *)(uintptr_t)multiboot_address;
     if (!(info->flags & MULTIBOOT_INFO_FRAMEBUFFER) ||
         info->framebuffer_width == 0 || info->framebuffer_height == 0 ||
         (info->framebuffer_bpp != 15 && info->framebuffer_bpp != 16 &&
          info->framebuffer_bpp != 24 && info->framebuffer_bpp != 32) ||
         info->framebuffer_type != 1 || info->framebuffer_address == 0 ||
-        (sizeof(uintptr_t) < 8 && (info->framebuffer_address >> 32) != 0)) return;
+        (sizeof(uintptr_t) < 8 && (info->framebuffer_address >> 32) != 0)) {
+        vga_log_warn("framebuffer rejected: flags=0x%x type=%d bpp=%d addr=0x%x",
+                     info->flags, info->framebuffer_type, info->framebuffer_bpp,
+                     (uint32_t)info->framebuffer_address);
+        return;
+    }
     row_bytes = (uint64_t)info->framebuffer_width * ((info->framebuffer_bpp + 7u) / 8u);
     if (info->framebuffer_pitch < row_bytes) return;
 

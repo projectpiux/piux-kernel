@@ -5,7 +5,6 @@
 
 #define DESKTOP_MAX_WINDOWS 4
 
-/* Le finestre sono in coordinate pixel nativi; bordo e barra titolo in px. */
 #define DESKTOP_BORDER      2
 #define DESKTOP_TITLEBAR_H  26
 

@@ -27,8 +27,45 @@ enum {
     SYS_SYSTEM_INFO = 20,
     SYS_AUTH_INFO = 21,
     SYS_SHELL_EXEC = 22,
-    SYS_MOUSE_INIT = 23
+    SYS_MOUSE_INIT = 23,
+    SYS_SPAWN = 24,
+    SYS_WAIT = 25,
+    SYS_IPC = 26,
+    SYS_GETARGS = 27
 };
+
+#define IPC_OP_START 1
+#define IPC_OP_STOP 2
+#define IPC_OP_RESTART 3
+#define IPC_OP_RELOAD 4
+#define IPC_OP_RELOAD_CONFIG 5
+#define IPC_OP_STATUS 6
+#define IPC_OP_PING 7
+#define IPC_OP_REPLY 0x80
+
+#define IPC_OK 0
+#define IPC_ENOSVC 1
+#define IPC_EALREADY 2
+#define IPC_EBUSY 3
+#define IPC_EINVAL 4
+#define IPC_ECONF 5
+#define IPC_EIO 6
+#define IPC_EVERSION 7
+
+typedef struct {
+    uint32_t magic;
+    uint8_t version;
+    uint8_t op;
+    uint8_t flags;
+    uint8_t reserved;
+    uint32_t seq;
+    uint32_t arg_pid;
+    char name[32];
+    char extra[20];
+} piux_ipc_msg_t;
+
+#define PIUX_IPC_MAGIC 0x50495058U
+#define PIUX_IPC_VERSION 1
 
 typedef struct {
     int framebuffer_ready;
@@ -42,12 +79,12 @@ typedef struct {
     uint32_t type;
     int x;
     int y;
-    uint32_t value;  
+    uint32_t value;
     uint8_t alpha;
     uint8_t color;
     char character;
-    uint32_t aux;    
-    uint32_t aux2;   
+    uint32_t aux;
+    uint32_t aux2;
 } syscall_video_op_t;
 
 typedef struct {

@@ -10,10 +10,8 @@ typedef struct {
     int height;
 } app_rect_t;
 
-/* Il contesto passa alle app la geometria del contenuto IN PIXEL NATIVI;
-   ogni app decide da sola come disporre il proprio testo. */
 typedef struct {
-    app_rect_t content;   /* pixel nativi */
+    app_rect_t content;   
     void *state;
 } app_context_t;
 

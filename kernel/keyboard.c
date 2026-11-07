@@ -94,84 +94,66 @@ void keyboard_load_layout_from_config(void) {
 }
 
 int keyboard_try_read_char(void) {
-    if (!(inb(0x64) & 1) || (inb(0x64) & 0x20)) return -1;
+    uint32_t flags;
+    uint8_t status;
+
+    asm volatile ("pushfl\n\tpopl %0\n\tcli" : "=r"(flags));
+    if (!(inb(0x64) & 1)) {
+        asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
+        return -1;
+    }
+    status = inb(0x64);
+    if (status & 0x20) {
+
+        extern void mouse_irq_handler(void);
+        mouse_irq_handler();
+        asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
+        return -1;
+    }
     {
         uint8_t scancode = inb(0x60);
+        int result = -1;
         last_scancode = scancode;
 
         if (scancode == 0xE0) {
             extended_scancode = 1;
-            return -1;
-        }
-
-        if (extended_scancode) {
+        } else if (extended_scancode) {
             extended_scancode = 0;
-            if (scancode & 0x80) return -1;
-            if (scancode == 0x48) return KEY_ARROW_UP;
-            if (scancode == 0x50) return KEY_ARROW_DOWN;
-            if (scancode == 0x4B) return KEY_ARROW_LEFT;
-            if (scancode == 0x4D) return KEY_ARROW_RIGHT;
-            if (scancode == 0x53) return KEY_DELETE;
-            return -1;
-        }
-
-        if (scancode & 0x80) {
+            if (!(scancode & 0x80)) {
+                if (scancode == 0x48) result = KEY_ARROW_UP;
+                else if (scancode == 0x50) result = KEY_ARROW_DOWN;
+                else if (scancode == 0x4B) result = KEY_ARROW_LEFT;
+                else if (scancode == 0x4D) result = KEY_ARROW_RIGHT;
+                else if (scancode == 0x53) result = KEY_DELETE;
+            }
+        } else if (scancode & 0x80) {
             uint8_t released = scancode & ~0x80;
-
-            if (released == 0x2A || released == 0x36) {
-                shift_pressed = 0;
-                return -1;
-            }
-
-            if (released == 0x1D) {
-                ctrl_pressed = 0;
-                return -1;
-            }
-
-            if (released == 0x38) {
-                alt_pressed = 0;
-                return -1;
-            }
-
-            return -1;
-        }
-
-        if (scancode == 0x2A || scancode == 0x36) {
+            if (released == 0x2A || released == 0x36) shift_pressed = 0;
+            else if (released == 0x1D) ctrl_pressed = 0;
+            else if (released == 0x38) alt_pressed = 0;
+        } else if (scancode == 0x2A || scancode == 0x36) {
             shift_pressed = 1;
-            return -1;
-        }
-
-        if (scancode == 0x1D) {
+        } else if (scancode == 0x1D) {
             ctrl_pressed = 1;
-            return -1;
-        }
-
-        if (scancode == 0x38) {
+        } else if (scancode == 0x38) {
             alt_pressed = 1;
-            return -1;
-        }
-
-        if (ctrl_pressed) {
-            if (scancode == 0x10) return 17;
-            if (scancode == 0x2E) return 3;
-            if (scancode == 0x1F) return 19;
-            if (scancode == 0x2D) return 24;
-            if (scancode == 0x1E) return 1;
-            if (scancode == 0x30) return 26;
-            if (scancode == 0x17) return 9;
-            if (scancode == 0x23) return 16;
-        }
-
-        if (scancode < 60) {
+        } else if (ctrl_pressed) {
+            if (scancode == 0x10) result = 17;
+            else if (scancode == 0x2E) result = 3;
+            else if (scancode == 0x1F) result = 19;
+            else if (scancode == 0x2D) result = 24;
+            else if (scancode == 0x1E) result = 1;
+            else if (scancode == 0x30) result = 26;
+            else if (scancode == 0x17) result = 9;
+            else if (scancode == 0x23) result = 16;
+        } else if (scancode < 60) {
             const char *table = keyboard_lookup_table(shift_pressed);
             char ascii = table[scancode];
-
-            if (ascii != 0) {
-                return ascii;
-            }
+            if (ascii != 0) result = ascii;
         }
+        asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
+        return result;
     }
-    return -1;
 }
 
 extern void net_poll(void);

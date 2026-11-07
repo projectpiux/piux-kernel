@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "../../kernel/syscall.h"
 
+#define PIUX_IPC_MAGIC 0x50495058U
+#define PIUX_IPC_VERSION 1
+
 #define KEY_ARROW_UP    0x100
 #define KEY_ARROW_DOWN  0x101
 #define KEY_ARROW_LEFT  0x102
@@ -11,7 +14,6 @@
 #define KEY_DELETE      0x104
 #define MOUSE_BUTTON_LEFT 0x01
 
-/* Font pixel condiviso: glifi 6x13 disegnati a scala PIXFONT_SCALE (2x = 12x26). */
 #define PIXFONT_WIDTH  6
 #define PIXFONT_HEIGHT 16
 #define PIXFONT_SCALE  1
@@ -29,6 +31,20 @@ void user_api_init(void);
 int user_get_system_info(syscall_system_info_t *info);
 int user_get_auth_info(syscall_auth_info_t *info);
 int user_shell_execute(const char *command, char *output, uint32_t capacity);
+
+int user_spawn(const char *path, const char *args);
+int user_wait(int pid, int *status);
+int user_wait_nonblocking(int *status);
+int user_getpid(void);
+int user_ipc_recv(void *message);
+int user_ipc_try_recv(void *message);
+int user_ipc_send(int target_pid, const void *message);
+void user_getargs(char *buffer, uint32_t capacity);
+void user_exit(int status) __attribute__((noreturn));
+int user_write(const char *buffer, int length);
+int user_open(const char *path, int flags);
+int user_read(int fd, void *buffer, int length);
+int user_close(int fd);
 
 void video_clear(void);
 void video_put_cell(int column, int row, char character, uint8_t color);

@@ -285,7 +285,6 @@ static int view_open(elf_view_t *view, const uint8_t *file, uint32_t size) {
                 (uint32_t)view->header->shnum * sizeof(elf_section_t));
     if (view->sections[view->header->shstrndx].type != SHT_STRTAB) return -1;
 
-
     for (index = 1; index < view->header->shnum; index++) {
         elf_section_t *section = &view->sections[index];
         uint32_t alignment;
@@ -477,7 +476,6 @@ static void register_exports(elf_view_t *view, int slot) {
     module_exports_fn exports = 0;
     uint32_t index;
 
-
     for (index = 0; index < view->symbol_count; index++) {
         const elf_symbol_t *symbol = &view->symbols[index];
         if (symbol->shndx == SHN_UNDEF) continue;
@@ -568,8 +566,6 @@ static int load_image(const char *requested_name, int depth, char *detail) {
         return result;
     }
 
-
-
     for (uint32_t index = 0; index < view.descriptor->dep_count; index++) {
         const char *dependency = view.descriptor->deps[index];
         if (!dependency || !dependency[0]) {
@@ -597,11 +593,9 @@ static int load_image(const char *requested_name, int depth, char *detail) {
         return -1;
     }
 
-
     {
         const module_image_t *loaded = &images[slot];
         (void)loaded;
-
 
         {
             module_exports_fn exports = 0;

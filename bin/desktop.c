@@ -42,7 +42,7 @@ void cmd_desktop(const char *param, desktop_puts_t puts, desktop_putc_t putc) {
     }
     if (matches(param, "--info")) {
         print_info(puts);
-        puts("Runs as /desktop.elf in user mode.\n");
+        puts("Runs as /bin/desktop.elf in user mode.\n");
         return;
     }
     if (matches(param, "--reload")) {
@@ -54,7 +54,7 @@ void cmd_desktop(const char *param, desktop_puts_t puts, desktop_putc_t putc) {
         return;
     }
     if (param[0] == '\0' || matches(param, "--start")) {
-        if (process_exec("/desktop.elf") < 0) puts("Unable to start /desktop.elf\n");
+        if (process_exec("/bin/desktop.elf") < 0) puts("Unable to start /bin/desktop.elf\n");
         return;
     }
     puts("Unknown pde option: ");

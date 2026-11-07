@@ -18,6 +18,7 @@
 #include "vfs_core.h"
 #include "../bin/commands.h"
 #include "../tui/installer/installer.h"
+#include "vga_log.h"
 
 #define VGA_MEMORY 0xB8000
 #define VGA_WIDTH (video_framebuffer_ready ? video_columns : 80)
@@ -56,9 +57,7 @@ uint8_t SLP_TYPb = 0;
 
 static void power_off(void) {
 
-
     __asm__ __volatile__("cli"); 
-
 
     uint16_t pm1a_cmd = (SLP_TYPa << 10) | ACPI_SLP_EN;
     if (PM1a_CNT_BLK) outw((uint16_t)PM1a_CNT_BLK, pm1a_cmd);
@@ -117,8 +116,6 @@ static void load_kernel_modules(void) {
             vga_puts(" loaded\n");
         }
     }
-
-
 
     {
         const module_image_t *commands = module_find("commands");
@@ -574,57 +571,89 @@ static int startup_word_is(const char *line, const char *word) {
     return !word[index] && (line[index] == '\0' || line[index] == ' ' || line[index] == '\t');
 }
 
-static void run_startup(void) {
-    static char init[1024];
-    int length = ext2_is_mounted() ? ext2_read_file_by_path("/sbin/init", init, sizeof(init) - 1) : -1;
-    char command[128];
-    int in_startup = 0;
-    int position = 0;
-    command[0] = '\0';
-    if (length > 0) {
-        init[length] = '\0';
-        while (init[position] && !command[0]) {
-            char *line = &init[position];
-            int end = 0;
-            while (line[end] && line[end] != '\n') end++;
-            position += end + (line[end] ? 1 : 0);
-            line[end] = '\0';
-            if (end > 0 && line[end - 1] == '\r') line[--end] = '\0';
-            while (*line == ' ' || *line == '\t') line++;
-            if (!*line || *line == '#') continue;
-            if (*line == '[') {
-                in_startup = startup_word_is(line, "[STARTUP]");
-                continue;
-            }
-            if (in_startup) {
-                int i = 0;
-                while (line[i] && i < (int)sizeof(command) - 1) { command[i] = line[i]; i++; }
-                while (i > 0 && (command[i - 1] == ' ' || command[i - 1] == '\t')) i--;
-                command[i] = '\0';
-            }
+#define LEGACY_INIT_PATH "/sbin/init"
+#define NEW_INIT_PATH "/sbin/init.elf"
+#define INIT_CONF_PATH "/etc/piux/init.conf"
+
+static int file_has_elf_magic(const char *path) {
+    uint8_t header[4];
+    int length = ext2_read_file_by_path(path, header, sizeof(header));
+    return length == (int)sizeof(header) && header[0] == 0x7f &&
+           header[1] == 'E' && header[2] == 'L' && header[3] == 'F';
+}
+
+static int migrate_legacy_config(void) {
+    static char legacy[1024];
+    int length;
+    if (file_has_elf_magic(LEGACY_INIT_PATH)) return 0;
+    if (ext2_find_inode_by_path(INIT_CONF_PATH) >= 0) return 0;
+    length = ext2_is_mounted() ? ext2_read_file_by_path(LEGACY_INIT_PATH, legacy, sizeof(legacy) - 1) : -1;
+    if (length <= 0) return -1;
+    legacy[length] = '\0';
+    if (ext2_create_directory_by_path("/etc") < 0) return -1;
+    if (ext2_create_directory_by_path("/etc/piux") < 0) return -1;
+    if (ext2_create_file_by_path(INIT_CONF_PATH) < 0) return -1;
+    if (ext2_write_file_by_path(INIT_CONF_PATH, legacy, (uint32_t)length) < 0) return -1;
+    vga_log_warn("migrated %s to %s", LEGACY_INIT_PATH, INIT_CONF_PATH);
+    return 0;
+}
+
+static void recovery_shell(void) {
+    if (scheduler_is_enabled()) {
+        vga_log_warn("shutting down scheduler for recovery shell");
+        process_disable_scheduler();
+    }
+    vga_puts("\nType 'help' for essential commands explaination use.\n\n");
+    shell();
+    for (;;) asm volatile ("hlt");
+}
+
+static int run_init(void) {
+    if (!ext2_is_mounted()) {
+        vga_log_warn("no root filesystem, starting recovery shell");
+        return 0;
+    }
+    migrate_legacy_config();
+    if (!file_has_elf_magic(NEW_INIT_PATH)) {
+        vga_log_warn("%s missing or not an ELF, starting recovery shell", NEW_INIT_PATH);
+        return 0;
+    }
+    process_enable_scheduler();
+    process_set_recovery_hook(recovery_shell);
+    if (process_spawn_user(NEW_INIT_PATH, 0) < 0) {
+        vga_log_fail("cannot start %s, starting recovery shell", NEW_INIT_PATH);
+        return 0;
+    }
+    for (;;) {
+        int status = 0;
+        int pid = process_wait(-1, 1, &status);
+        if (pid == 1) {
+            vga_log_fail("init exited with status %d, starting recovery shell", status);
+            return 0;
         }
     }
-    if (!command[0] && length <= 0) {
-        command[0] = 'p'; command[1] = 'd'; command[2] = 'e'; command[3] = '\0';
-    }
-    if (!command[0]) return;
-    if (startup_word_is(command, "pde") || startup_word_is(command, "desktop")) {
-        if (process_exec("/desktop.elf") < 0) vga_puts("Unable to start /desktop.elf.\n");
-    } else
-        shell_execute_command_line(command, vga_puts, vga_putc);
 }
 
 void kernel_main(uint32_t magic, uint32_t addr) {
     asm volatile ("cli");
+    {
+        extern void vga_log_info(const char *, ...);
+        vga_log_info("kernel_main entered magic=0x%x", magic);
+    }
     system_info_init(magic, addr);
+    vga_log_info("system info done");
     video_init(magic, addr);
+    vga_log_info("video init done");
     vga_clear();
     vga_update_cursor();
+    vga_log_info("clear done");
 
     memory_init(system_memory_upper_kb);
+    vga_log_info("memory init done");
     gdt_init();
     ramfs_init();
     ext2_mount();
+    vga_log_info("ext2 mounted=%d", ext2_is_mounted());
     keyboard_load_layout_from_config();
     module_init();
     core_symbols_init();
@@ -643,7 +672,8 @@ void kernel_main(uint32_t magic, uint32_t addr) {
         auth_login(vga_clear, vga_puts, vga_putc);
     }
 
-    run_startup();
-    shell();
+    if (!run_init()) {
+        recovery_shell();
+    }
     for (;;) asm volatile ("hlt");
 }

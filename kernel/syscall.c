@@ -10,6 +10,7 @@
 #include "auth.h"
 #include "ext2.h"
 #include "shell.h"
+#include "vga_log.h"
 
 extern ext2_filesystem_t fs;
 extern char _os_infos_start[];
@@ -21,6 +22,9 @@ typedef struct {
     uint32_t capacity;
     uint32_t length;
 } shell_capture_t;
+
+#define SHELL_CAPTURE_KERNEL_SIZE 4096
+static char shell_capture_kernel[SHELL_CAPTURE_KERNEL_SIZE];
 
 static void capture_putc(char character, shell_capture_t *capture) {
     if (capture->length + 1 >= capture->capacity) return;
@@ -109,6 +113,7 @@ static int user_string_valid(const char *text) {
 
 static int syscall_open(const char *path, int flags) {
     if (!path) return -1;
+    if (!(flags & (VFS_O_READ | VFS_O_WRITE | VFS_O_CREATE))) flags |= VFS_O_READ;
     return vfs_open(path, flags);
 }
 
@@ -145,7 +150,7 @@ void syscall_dispatch(syscall_registers_t *registers) {
             result = 0;
             break;
         case SYS_EXIT:
-            if (from_user) process_exit_user((int)registers->ebx);
+            if (from_user) process_exit((int)registers->ebx);
             process_exit((int)registers->ebx);
             result = 0;
             break;
@@ -212,7 +217,6 @@ void syscall_dispatch(syscall_registers_t *registers) {
         }
         case SYS_VIDEO_PRESENT:
 
-
             if (registers->ebx) video_present_region();
             else video_present();
             result = 0;
@@ -241,6 +245,43 @@ void syscall_dispatch(syscall_registers_t *registers) {
             mouse_init();
             result = 0;
             break;
+        case SYS_SPAWN: {
+            const char *path = (const char *)(uintptr_t)registers->ebx;
+            const char *args = (const char *)(uintptr_t)registers->ecx;
+            if (from_user && (!user_string_valid(path) ||
+                (args && !user_string_valid(args)))) break;
+            result = process_spawn_user(path, args);
+            break;
+        }
+        case SYS_WAIT: {
+            int status = 0;
+            result = process_wait((int)registers->ebx, (int)registers->ecx, &status);
+            if (registers->edx &&
+                (!from_user || memory_user_range_valid((void *)(uintptr_t)registers->edx, 4, 1))) {
+                *(int *)(uintptr_t)registers->edx = status;
+            }
+            break;
+        }
+        case SYS_IPC: {
+            void *buffer = (void *)(uintptr_t)registers->ecx;
+            if (from_user && !memory_user_range_valid(buffer, sizeof(piux_ipc_msg_t), 1)) break;
+            if (registers->ebx == 0) {
+                result = process_ipc_recv((piux_ipc_msg_t *)buffer);
+            } else if (registers->ebx == 2) {
+                result = process_ipc_try_recv((piux_ipc_msg_t *)buffer);
+            } else {
+                piux_ipc_msg_t message = *(piux_ipc_msg_t *)buffer;
+                result = process_ipc_send((int)registers->edx, &message);
+            }
+            break;
+        }
+        case SYS_GETARGS: {
+            char *buffer = (char *)(uintptr_t)registers->ebx;
+            if (from_user && !memory_user_range_valid(buffer, PROCESS_ARGS_SIZE, 1)) break;
+            process_get_args(buffer, PROCESS_ARGS_SIZE);
+            result = 0;
+            break;
+        }
         case SYS_SYSTEM_INFO: {
             syscall_system_info_t info = {0};
             const process_t *process = process_current();
@@ -281,14 +322,23 @@ void syscall_dispatch(syscall_registers_t *registers) {
             uint32_t capacity = registers->edx;
             if ((from_user && (!user_string_valid((const char *)(uintptr_t)registers->ebx) ||
                  !memory_user_range_valid(output, capacity, 1))) || capacity == 0) break;
-            capture.buffer = output;
-            capture.capacity = capacity;
+            capture.buffer = shell_capture_kernel;
+            capture.capacity = SHELL_CAPTURE_KERNEL_SIZE;
             capture.length = 0;
-            output[0] = '\0';
+            shell_capture_kernel[0] = '\0';
             active_shell_capture = &capture;
             result = shell_execute_command_line((const char *)(uintptr_t)registers->ebx,
                                                 shell_output_puts, shell_output_putc);
             active_shell_capture = 0;
+            {
+                uint32_t copied = 0;
+                if (capture.length > capacity - 1) capture.length = capacity - 1;
+                while (copied < capture.length) {
+                    output[copied] = shell_capture_kernel[copied];
+                    copied++;
+                }
+                output[copied] = '\0';
+            }
             break;
         }
         default:

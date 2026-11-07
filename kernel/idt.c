@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "syscall.h"
 #include "process.h"
+#include "vga_log.h"
 
 typedef struct {
     uint16_t limit;
@@ -62,12 +63,21 @@ void exception_dispatch(uint32_t *frame) {
     uint32_t vector = frame[8];
     uint32_t code_selector = frame[11];
     if ((code_selector & 3U) == 3U) process_handle_user_exception(vector);
-    vga_puts("\nKernel exception vector=0x");
-    exception_print_hex(vector);
-    vga_puts(" error=0x");
-    exception_print_hex(frame[9]);
-    vga_puts(" eip=0x");
-    exception_print_hex(frame[10]);
-    vga_putc('\n');
+    {
+        const process_t *faulted = process_current();
+        vga_puts("\nKernel page fault: cr2=0x");
+        {
+            uint32_t cr2;
+            asm volatile ("mov %%cr2, %0" : "=r"(cr2));
+            exception_print_hex(cr2);
+        }
+        vga_puts(" eip=0x");
+        exception_print_hex(frame[10]);
+        if (faulted) {
+            vga_puts(" while servicing ");
+            vga_puts(faulted->name);
+        }
+        vga_putc('\n');
+    }
     for (;;) asm volatile ("cli; hlt");
 }
