@@ -371,6 +371,7 @@ int init_main(void) {
         int status = 0;
         int exited = user_wait_nonblocking(&status);
         if (exited > 0) {
+            if (status == PIUX_EXIT_TO_RECOVERY_SHELL) user_exit(0);
             int respawned = 0;
             puts_text("[ WARN ] process pid=");
             puts_number(exited);

@@ -10,7 +10,7 @@ static inline int piux_syscall(int number, int a, int b, int c) {
 }
 
 void _start(void) {
-    const char *message = "Hello from user mode!\n";
+    const char *message = "Hello from user mode! This is a debug command: if you see this, ELF loader works fine!\n\n";
     int length = 0;
     while (message[length]) length++;
     piux_syscall(1 , 1 , (int)(long)message, length);

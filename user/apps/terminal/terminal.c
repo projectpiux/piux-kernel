@@ -15,6 +15,7 @@ typedef struct {
     char input[TERMINAL_MAX_INPUT];
     int input_length;
     int line_width;
+    int scroll_offset;
 } terminal_state_t;
 
 static terminal_state_t terminal;
@@ -36,6 +37,7 @@ static void copy_text(char *destination, const char *source, int capacity) {
 }
 
 static void terminal_new_line(terminal_state_t *state) {
+    if (state->scroll_offset > 0) state->scroll_offset += PIXEL_LINE_HEIGHT;
     if (state->line_count == TERMINAL_MAX_LINES) {
         for (int row = 1; row < TERMINAL_MAX_LINES; row++)
             copy_text(state->lines[row - 1], state->lines[row], TERMINAL_LINE_LENGTH);
@@ -96,6 +98,7 @@ static int terminal_initialize(app_context_t *context) {
     state->line_count = 0;
     state->input_length = 0;
     state->input[0] = '\0';
+    state->scroll_offset = 0;
     state->line_width = (context->content.width - 6) / PIXEL_CHAR_ADVANCE;
     if (state->line_width >= TERMINAL_LINE_LENGTH) state->line_width = TERMINAL_LINE_LENGTH - 1;
     if (state->line_width < 1) return -1;
@@ -110,6 +113,8 @@ static void terminal_render(app_context_t *context) {
     terminal_state_t *state = context->state;
     int visible;
     int first;
+    int scroll_top;
+    int max_scroll;
     int chars_per_line;
     if (!state) return;
 
@@ -121,11 +126,15 @@ static void terminal_render(app_context_t *context) {
 
     pixel_fill_rect(context->content.x, context->content.y,
                     context->content.width, context->content.height, 0x000000u);
-    first = state->line_count - visible;
-    if (first < 0) first = 0;
-    for (int row = 0; row < visible; row++) {
+    max_scroll = (state->line_count - visible) * PIXEL_LINE_HEIGHT;
+    if (max_scroll < 0) max_scroll = 0;
+    if (state->scroll_offset > max_scroll) state->scroll_offset = max_scroll;
+    scroll_top = max_scroll - state->scroll_offset;
+    first = scroll_top / PIXEL_LINE_HEIGHT;
+    for (int row = 0; row <= visible; row++) {
         int line = first + row;
-        int baseline = context->content.y + 2 + row * PIXEL_LINE_HEIGHT;
+        int baseline = context->content.y + 2 + row * PIXEL_LINE_HEIGHT -
+                       scroll_top % PIXEL_LINE_HEIGHT;
         if (line >= state->line_count) break;
         pixel_draw_text(context->content.x + 3, baseline, state->lines[line], 0xE0E0E0u);
     }
@@ -134,6 +143,7 @@ static void terminal_render(app_context_t *context) {
 static void terminal_clear_output(void) {
     for (int row = 0; row < TERMINAL_MAX_LINES; row++) terminal.lines[row][0] = '\0';
     terminal.line_count = 0;
+    terminal.scroll_offset = 0;
 }
 
 static int input_is_clear(const char *input) {
@@ -180,6 +190,11 @@ static void terminal_handle_event(app_context_t *context, const app_event_t *eve
     static int history_count;
     static int history_position;
     (void)context;
+    if (event->type == APP_EVENT_MOUSE) {
+        terminal.scroll_offset -= event->wheel * PIXEL_LINE_HEIGHT;
+        if (terminal.scroll_offset < 0) terminal.scroll_offset = 0;
+        return;
+    }
     if (event->type != APP_EVENT_KEY) return;
     if (event->key == '\n') {
         if (terminal.input_length > 0) {
