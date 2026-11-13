@@ -565,11 +565,27 @@ static int handle_mouse_event(const mouse_event_t *event) {
 
 static int pump_mouse(int *redraw) {
     mouse_event_t mouse_event;
+    mouse_event_t pending;
+    int have_pending = 0;
     int activity = 0;
+
     while (mouse_poll(&mouse_event)) {
         activity = 1;
-        *redraw |= handle_mouse_event(&mouse_event);
+        if (have_pending && (mouse_event.buttons & MOUSE_BUTTON_LEFT) ==
+                            (pending.buttons & MOUSE_BUTTON_LEFT)) {
+            /* Coalesce consecutive motion events so a fast mouse does not build
+               a backlog: only the last position of the batch matters. */
+            pending.dx += mouse_event.dx;
+            pending.dy += mouse_event.dy;
+            pending.wheel += mouse_event.wheel;
+            pending.buttons = mouse_event.buttons;
+            continue;
+        }
+        if (have_pending) *redraw |= handle_mouse_event(&pending);
+        pending = mouse_event;
+        have_pending = 1;
     }
+    if (have_pending) *redraw |= handle_mouse_event(&pending);
     return activity;
 }
 

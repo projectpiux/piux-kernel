@@ -35,6 +35,8 @@ static const char scancode_ascii_shift_it[] = {
     '*',    0,      ' '
 };
 
+#define KEYBOARD_DRAIN_LIMIT 16
+
 static keyboard_layout_t current_layout = KEYBOARD_LAYOUT_US;
 static int shift_pressed = 0;
 static int ctrl_pressed = 0;
@@ -93,28 +95,34 @@ void keyboard_load_layout_from_config(void) {
     }
 }
 
+static int keyboard_decode_scancode(uint8_t scancode);
+
 int keyboard_try_read_char(void) {
     uint32_t flags;
-    uint8_t status;
+    int result;
 
     asm volatile ("pushfl\n\tpopl %0\n\tcli" : "=r"(flags));
-    if (!(inb(0x64) & 1)) {
-        asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
-        return -1;
-    }
-    status = inb(0x64);
-    if (status & 0x20) {
+    for (int drained = 0; drained < KEYBOARD_DRAIN_LIMIT; drained++) {
+        uint8_t status = inb(0x64);
+        uint8_t scancode;
 
-        extern void mouse_irq_handler(void);
-        mouse_irq_handler();
+        if (!(status & 1)) break;
+        if (status & 0x20) break;
+        scancode = inb(0x60);
+        result = keyboard_decode_scancode(scancode);
+        if (result < 0) continue;
         asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
-        return -1;
+        return result;
     }
+    asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
+    return -1;
+}
+
+static int keyboard_decode_scancode(uint8_t scancode) {
+    int result = -1;
+    last_scancode = scancode;
+
     {
-        uint8_t scancode = inb(0x60);
-        int result = -1;
-        last_scancode = scancode;
-
         if (scancode == 0xE0) {
             extended_scancode = 1;
         } else if (extended_scancode) {
@@ -151,7 +159,6 @@ int keyboard_try_read_char(void) {
             char ascii = table[scancode];
             if (ascii != 0) result = ascii;
         }
-        asm volatile ("pushl %0\n\tpopfl" : : "r"(flags));
         return result;
     }
 }
