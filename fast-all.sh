@@ -9,8 +9,18 @@ echo "Piux Build & Boot Script"
 echo "This script speeds up the process of cleaning, compiling, creating images and starting Piux in VM"
 echo "v1.0.0"
 
+ARCH="${PIUX_ARCH:-x86}"
 DISK="build/ext2.img"
-ISO="piux.iso"
+ISO="build/$ARCH/piux.iso"
+QEMU_BIN="qemu-system-i386"
+
+# The ISO path follows the selected port (build/<arch>/piux.iso) and the
+# emulator follows the port's ISA. Only x86 (i386) exists for now; a new port
+# also needs its own emulator line here and in the Makefile's `run` target.
+if [[ "$ARCH" != "x86" ]]; then
+    echo "[!] Unknown architecture '$ARCH' (available: x86)"
+    exit 1
+fi
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -34,19 +44,19 @@ fi
 build_piux() {
     echo "[*] Cleaning..."
     make clean
-    echo "[*] Compiling..."
-    make
+    echo "[*] Compiling... ($ARCH)"
+    make ARCH="$ARCH"
 }
 
 create_disk() {
     echo "[*] Creating disk image..."
-    make install-user-programs
+    make ARCH="$ARCH" install-user-programs
 }
 
 start_vm() {
-    require_command qemu-system-i386
+    require_command "$QEMU_BIN"
     echo "[*] Starting VM with an adaptive framebuffer..."
-    qemu-system-i386 \
+    "$QEMU_BIN" \
         -cdrom "$ISO" \
         -drive "file=$DISK,format=raw,if=ide" \
         -device rtl8139,netdev=n0 \
@@ -79,7 +89,7 @@ while true; do
                 echo "[!] Missing $DISK or $ISO. Build Piux first with option 3."
                 continue
             fi
-            make install-user-programs
+            make ARCH="$ARCH" install-user-programs
             start_vm
             ;;
         3)

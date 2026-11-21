@@ -1,3 +1,10 @@
+/* Piux x86 (i386) kernel linker script.
+ *
+ * The kernel is loaded by Multiboot1 at 1 MiB and linked at the same address
+ * (identity mapping). arch/<name>/linker/kernel.ld is selected by the Makefile
+ * for ARCH=<name>, next to arch/<name>/boot/.
+ */
+
 ENTRY(_start)
 
 SECTIONS

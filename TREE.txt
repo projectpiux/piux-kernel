@@ -1,4 +1,14 @@
 .
+├── arch
+│   └── x86
+│       ├── Makefile.mk
+│       ├── boot
+│       │   └── bootx.asm
+│       ├── include
+│       │   └── arch
+│       │       └── arch.h
+│       └── linker
+│           └── kernel.ld
 ├── banner.png
 ├── bin
 │   ├── about.c
@@ -24,10 +34,9 @@
 │   ├── shutdown.c
 │   ├── top.c
 │   └── touch.c
-├── boot
-│   └── bootx.asm
 ├── CONTRIBUTING.md
 ├── docs
+│   ├── ARCH.md
 │   ├── EXAMPLE-C-EXECUTABLE.md
 │   ├── INIT.md
 │   ├── MODULES.md
@@ -40,7 +49,6 @@
 │   ├── init.c
 │   └── init.h
 ├── kernel
-│   ├── boot
 │   ├── core
 │   │   ├── auth.c
 │   │   ├── auth.h
@@ -138,7 +146,6 @@
 │       ├── video.c
 │       └── video.h
 ├── LICENSE
-├── linker.ld
 ├── Makefile
 ├── piux.png
 ├── preview.png

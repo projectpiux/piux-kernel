@@ -1,4 +1,4 @@
-# Build artifacts
+# Build artifacts (build/<arch>/ per port, ISO included)
 build/
 *.iso
 *.img

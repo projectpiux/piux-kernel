@@ -1,3 +1,11 @@
+; Piux x86 (i386) entry stub.
+;
+; GRUB jumps here in 32-bit protected mode with a Multiboot1 hand-off. The
+; stub sets up a bootstrap stack and calls the architecture-independent
+; kernel_main(magic, multiboot_info) in kernel/core/kmain.c.
+;
+; Selected by the Makefile for ARCH=x86, which is the only port for now.
+
 BITS 32
 
 MULTIBOOT_MAGIC equ 0x1badb002

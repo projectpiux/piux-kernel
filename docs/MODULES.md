@@ -132,7 +132,7 @@ mod reload commands   # unload then load again
 ### Build and install
 
 ```sh
-make modules                  # build/modules/{vfs,commands,net,installer}.mod
+make modules                  # build/<arch>/modules/{vfs,commands,net,installer}.mod
 make install-modules          # copy them to /lib/modules on build/ext2.img
 make                          # kernel + modules + user programs
 make install-user-programs    # desktop.elf + the modules on the disk image

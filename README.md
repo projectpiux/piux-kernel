@@ -73,6 +73,20 @@ bash fast-all.sh
 make clean
 ```
 
+### Architecture ports
+
+Everything CPU-specific lives in `arch/<name>/` (entry stub, linker script, toolchain flags); the rest of the kernel is architecture-independent. The only port today is `arch/x86` (32-bit x86 / i386), which is also the default, and its artifacts land in `build/x86/` (`kernel.elf`, `piux.iso`, `modules/`, user programs):
+
+```bash
+# 🧱 Build a specific port (ARCH defaults to x86)
+make ARCH=x86
+
+# 🧹 Clean just that port's build tree
+make ARCH=x86 clean
+```
+
+See `docs/ARCH.md` for the layout and how to add a port.
+
 ### Prerequisites
 
 <details open>
@@ -126,7 +140,7 @@ brew install nasm gcc binutils grub xorriso qemu e2fsprogs
 ```bash
 # 🖥️ Boot the ISO with a 1280x720 framebuffer and 512 MiB of RAM
 qemu-system-i386 \
-  -cdrom piux.iso \
+  -cdrom build/x86/piux.iso \
   -m 512M \
   -vga none \
   -device VGA,xres=1280,yres=720
@@ -180,6 +194,8 @@ Piux ships with PDE, a mouse- and keyboard-driven desktop whose interface and re
 **Filesystem.** Everything is exposed through a Unix-like VFS with file descriptors and device nodes such as `/dev/console` and `/dev/hda`. The ext2 driver is non-journaled and supports direct, single- and double-indirect blocks, file creation, reading, writing and deletion. Without a disk, Piux falls back to RAMFS.
 
 **Processes.** The kernel provides `int 0x80` syscalls, a kernel/user GDT with TSS, isolated page directories and a preemptive round-robin scheduler for ring3 ELF processes. `/sbin/init.elf` runs as PID 1 and is controlled by `initctl` over the PIUX-IPC/1 mailbox protocol (`docs/INIT.md`); if init is missing the kernel starts a recovery shell. The desktop terminal invokes kernel shell handlers through a checked syscall rather than running each command as a separate user process.
+
+**Ports.** CPU-specific code (boot stub, linker script, toolchain flags, architecture description) is isolated under `arch/<name>/`; `make ARCH=<name>` selects the port and builds into `build/<name>/`. Only the `x86` (i386) port exists for now, and the rest of the kernel is shared across ports. See `docs/ARCH.md`.
 
 **Modules.** The core binary is small on purpose: the VFS, the command table, the network stack and the installer are built as relocatable modules (`/lib/modules/*.mod`) that the kernel links into itself at boot through its own ELF loader and kernel-symbol table. They run in kernel mode, in the same address space, but are versioned, dependency-ordered and reloadable — a monolithic kernel with a clean core/module boundary. See `docs/MODULES.md`.
 

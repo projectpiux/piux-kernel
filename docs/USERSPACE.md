@@ -16,7 +16,7 @@ at the top of the range. Syscall buffers are checked against the active page
 tables; output buffers must also be writable. A user-mode CPU exception kills
 only the offending process and reports it on the VGA console.
 
-PDE and its registered applications are built as `build/user/desktop.elf`, not
+PDE and its registered applications are built as `build/<arch>/user/desktop.elf`, not
 linked into `kernel.elf`. The desktop uses `int 0x80` services for batched
 video drawing, keyboard and mouse input, system and account snapshots, and
 captured shell-command output. Startup and the `pde` command load
@@ -25,7 +25,7 @@ captured shell-command output. Startup and the `pde` command load
 Build user programs with `make user-programs`. `make install-user-programs`
 installs the desktop ELF, `/sbin/init.elf` and `/usr/bin/initctl` on
 `build/ext2.img`; `make run` and `fast-all.sh` perform this automatically.
-`build/user/isolation_test.elf` attempts to read kernel memory and should exit
+`build/<arch>/user/isolation_test.elf` attempts to read kernel memory and should exit
 with status `142` (page fault) when installed and launched with
 `run /isolation_test`.
 
