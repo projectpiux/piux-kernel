@@ -20,6 +20,9 @@ void video_init(uint32_t magic, uint32_t multiboot_address);
 void video_clear(void);
 void video_scroll(void);
 void video_put_cell(int column, int row, char character, uint8_t color);
+/* Draws one font glyph as solid pixels at an arbitrary position, scaled up so
+   the kernel panic report stays readable on high-resolution framebuffers. */
+void video_put_scaled_cell(int x, int y, int scale, char character, uint32_t color);
 void video_put_pixel(int x, int y, uint32_t color, uint8_t alpha);
 void video_capture_region(int x, int y, int width, int height, uint8_t *buffer);
 void video_restore_region(int x, int y, int width, int height, const uint8_t *buffer);

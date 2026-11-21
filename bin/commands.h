@@ -23,6 +23,7 @@ extern void cmd_nano(const char *param, void (*vga_puts)(const char*), void (*vg
 extern void cmd_echo(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_shutdown(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_reboot(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
+extern void cmd_panic(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_top(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_run(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));
 extern void cmd_initctl(const char *param, void (*vga_puts)(const char*), void (*vga_putc)(char));

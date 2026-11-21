@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include "syscall.h"
-#include "process.h"
-#include "vga_log.h"
+#include "panic.h"
 
 typedef struct {
     uint16_t limit;
@@ -20,15 +19,7 @@ static idt_entry_t idt[256];
 extern void syscall_entry(void);
 extern void timer_entry(void);
 extern void mouse_entry(void);
-extern uint32_t exception_stub_table[32];
-extern void vga_puts(const char *text);
-extern void vga_putc(char character);
-
-static void exception_print_hex(uint32_t value) {
-    static const char digits[] = "0123456789ABCDEF";
-    for (int shift = 28; shift >= 0; shift -= 4)
-        vga_putc(digits[(value >> shift) & 0x0f]);
-}
+extern uint32_t kernel_panic_stub_table[32];
 
 static void idt_set_gate(uint8_t vector, void (*handler)(void), uint8_t attributes) {
     uint32_t address = (uint32_t)handler;
@@ -48,8 +39,10 @@ void syscall_init(void) {
         idt[index].type_attributes = 0;
         idt[index].offset_high = 0;
     }
+    /* DPL 3 so faults raised in ring 3 also land in the panic stub, which
+       tears every user process down and reports the crash full screen. */
     for (uint32_t vector = 0; vector < 32; vector++) {
-        idt_set_gate((uint8_t)vector, (void (*)(void))(uintptr_t)exception_stub_table[vector], 0x8e);
+        idt_set_gate((uint8_t)vector, (void (*)(void))(uintptr_t)kernel_panic_stub_table[vector], 0xEE);
     }
     idt_set_gate(0x80, syscall_entry, 0xEE);
     idt_set_gate(0x20, timer_entry, 0x8e);
@@ -57,27 +50,4 @@ void syscall_init(void) {
     pointer.limit = sizeof(idt) - 1;
     pointer.base = (uint32_t)idt;
     asm volatile ("lidt %0" : : "m"(pointer));
-}
-
-void exception_dispatch(uint32_t *frame) {
-    uint32_t vector = frame[8];
-    uint32_t code_selector = frame[11];
-    if ((code_selector & 3U) == 3U) process_handle_user_exception(vector);
-    {
-        const process_t *faulted = process_current();
-        vga_puts("\nKernel page fault: cr2=0x");
-        {
-            uint32_t cr2;
-            asm volatile ("mov %%cr2, %0" : "=r"(cr2));
-            exception_print_hex(cr2);
-        }
-        vga_puts(" eip=0x");
-        exception_print_hex(frame[10]);
-        if (faulted) {
-            vga_puts(" while servicing ");
-            vga_puts(faulted->name);
-        }
-        vga_putc('\n');
-    }
-    for (;;) asm volatile ("cli; hlt");
 }

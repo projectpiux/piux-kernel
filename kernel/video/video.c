@@ -408,6 +408,11 @@ static const char *glyph_pattern(int c) {
     }
 }
 
+static int glyph_bits(int character, int row) {
+    if (character < 0 || character > 255 || row < 0 || row >= GLYPH_ROWS) return 0;
+    return font[(uint8_t)character][row] & 0x1F;
+}
+
 static void font_init(void) {
     if (font_ready) return;
     for (int c = 0; c < 256; c++) {
@@ -1062,6 +1067,37 @@ void video_scroll(void) {
         video_copy_rect(x, y + VIDEO_CELL_HEIGHT, x, y, width, height - VIDEO_CELL_HEIGHT);
         video_fill_rect(x, y + height - VIDEO_CELL_HEIGHT, width, VIDEO_CELL_HEIGHT, 0x000000, 255);
     }
+}
+
+void video_put_scaled_cell(int x, int y, int scale, char character, uint32_t color) {
+    uint32_t foreground = framebuffer_color(color);
+    int sx, sy;
+    if (!video_framebuffer_ready || !shadow_ready || scale <= 0) return;
+    if (!shadow_ready) vram_sync();
+    sx = (int)video_origin_x + scale * VIDEO_CELL_WIDTH;
+    sy = (int)video_origin_y + scale * VIDEO_CELL_HEIGHT;
+    if (x <= -sx || y <= -sy || x >= (int)fb.width || y >= (int)fb.height) return;
+    for (int gy = 0; gy < GLYPH_ROWS; gy++) {
+        int bits = glyph_bits(character, gy);
+        for (int gx = 0; gx < 5; gx++) {
+            int px, py, width, height;
+            if (!((bits >> (4 - gx)) & 1)) continue;
+            px = x + gx * scale;
+            py = y + gy * scale;
+            width = scale;
+            height = scale;
+            if (px < 0) { width += px; px = 0; }
+            if (py < 0) { height += py; py = 0; }
+            if (width <= 0 || height <= 0) continue;
+            if (px + width > (int)fb.width) width = (int)fb.width - px;
+            if (py + height > (int)fb.height) height = (int)fb.height - py;
+            if (width <= 0 || height <= 0) continue;
+            for (int r = 0; r < height; r++)
+                fill_pixels(surface_base() + (uintptr_t)(py + r) * surface_pitch() + (uintptr_t)px * fb.bytes,
+                            foreground, (uint32_t)width, fb.bytes);
+        }
+    }
+    surface_commit(x < 0 ? 0 : x, y < 0 ? 0 : y, x + sx, y + sy);
 }
 
 void video_put_cell(int column, int row, char character, uint8_t color) {

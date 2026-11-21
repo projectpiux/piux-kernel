@@ -14,6 +14,7 @@ extern ext2_filesystem_t fs;
 #include "../video/shell.h"
 #include "timer.h"
 #include "process.h"
+#include "panic.h"
 #include "elf.h"
 #include "../net/http.h"
 #include "../net/net.h"
@@ -65,6 +66,8 @@ static const char *const core_symbol_names[] = {
     "video_columns", "video_rows", "video_pixel_width", "video_pixel_height",
 
     "vga_puts", "vga_putc", "vga_clear",
+
+    "kernel_panic", "kernel_panic_msg",
 
     "process_exec", "process_getpid", "process_getuid", "process_yield",
     "process_spawn_user", "process_spawn_and_wait", "process_wait", "process_exit",
@@ -136,6 +139,7 @@ static const void *const core_symbol_addresses[] = {
     PIUX_EXPORT(&video_rows), PIUX_EXPORT(&video_pixel_width),
     PIUX_EXPORT(&video_pixel_height),
     PIUX_EXPORT(vga_puts), PIUX_EXPORT(vga_putc), PIUX_EXPORT(vga_clear),
+    PIUX_EXPORT(kernel_panic), PIUX_EXPORT(kernel_panic_msg),
     PIUX_EXPORT(process_exec), PIUX_EXPORT(process_getpid),
     PIUX_EXPORT(process_getuid), PIUX_EXPORT(process_yield),
     PIUX_EXPORT(process_spawn_user), PIUX_EXPORT(process_spawn_and_wait),

@@ -25,6 +25,7 @@ static const command_t commands[] = {
     { "echo", cmd_echo },
     { "shutdown", cmd_shutdown },
     { "reboot", cmd_reboot },
+    { "panic", cmd_panic },
     { "top", cmd_top },
     { "run", cmd_run },
     { "initctl", cmd_initctl },

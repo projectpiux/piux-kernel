@@ -121,8 +121,8 @@ brew install nasm gcc binutils grub xorriso qemu e2fsprogs
 | Resource | Minimum |
 |---|---|
 | CPU | 32-bit x86 / i386-compatible |
-| RAM | 24 MiB |
-| Disk | 32 MiB |
+| RAM | 32 MiB |
+| Disk | 64 MiB |
 | Firmware | BIOS / legacy boot with GRUB Multiboot1 |
 | Video | Multiboot framebuffer with a supported graphics mode |
 
@@ -204,20 +204,6 @@ Piux ships with PDE, a mouse- and keyboard-driven desktop whose interface and re
 **Network.** A polling-mode RTL8139 driver with ARP, IPv4, ICMP, UDP and a minimal single-connection TCP client, enough for HTTP downloads and the `pix` package manager.
 
 <details>
-<summary><b>Known limitations</b></summary>
-
-- No scheduler for independent user processes
-- No general-purpose allocator with `free`
-- No DHCP, DNS, real sockets or reliable TCP
-- No ext2 rename, truncate or triple-indirect growth
-- No partitioning tools and no FAT support
-- No hardware-accelerated graphics
-- Limited keyboard layouts, no AltGr
-- No shell pipes, redirection or variables
-
-</details>
-
-<details>
 <summary><b>Troubleshooting</b></summary>
 
 **GRUB not found** — install the rescue tools:
@@ -288,6 +274,14 @@ See `CONTRIBUTING.md` before contributing.
 
 Released under the **GPLv3**. See `LICENSE.md` for details.
 
+---
+
 ## 🙏 Credits
 
 NASM documentation · OSDev.org · GNU GRUB / Multiboot documentation · the open-source OS development community
+
+---
+
+## Note
+
+Piux is coded with the help of AI.

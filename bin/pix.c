@@ -9,7 +9,7 @@
 typedef void (*vga_puts_t)(const char*);
 typedef void (*vga_putc_t)(char);
 
-#define PIX_REPOSITORY "https://github.com/projectpiux/pix-pkgmanager/tree/main/pkgs"
+#define PIX_REPOSITORY "https://github.com/projectpiux/pix-pkgmanager/tree/main/pkgs/"
 #define PIX_HOST "raw.githubusercontent.com"
 #define PIX_PORT 443
 #define PIX_FALLBACK_IP "185.199.109.133"
