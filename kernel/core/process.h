@@ -67,6 +67,7 @@ void process_yield(void);
 void process_idle_yield(void);
 int process_pid1_alive(void);
 const process_t *process_current(void);
+const process_t *process_at(int index);
 int process_ipc_send(int target_pid, const piux_ipc_msg_t *message);
 int process_ipc_recv(piux_ipc_msg_t *message);
 int process_ipc_try_recv(piux_ipc_msg_t *message);

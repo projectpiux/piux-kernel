@@ -21,6 +21,7 @@ int (*vfs_write_dispatch)(int fd, const void *buffer, uint32_t size);
 int (*vfs_close_dispatch)(int fd);
 int (*vfs_seek_dispatch)(int fd, uint32_t offset);
 vfs_node_type_t (*vfs_node_type_dispatch)(const char *path);
+int (*vfs_is_regular_dispatch)(int fd);
 vfs_console_putc_t (*vfs_console_output_dispatch)(vfs_console_putc_t putc);
 
 int vfs_open(const char *path, int flags) {
@@ -45,6 +46,10 @@ int vfs_seek(int fd, uint32_t offset) {
 
 vfs_node_type_t vfs_node_type(const char *path) {
     return vfs_node_type_dispatch ? vfs_node_type_dispatch(path) : VFS_NODE_FILE;
+}
+
+int vfs_is_regular(int fd) {
+    return vfs_is_regular_dispatch ? vfs_is_regular_dispatch(fd) : 0;
 }
 
 vfs_console_putc_t vfs_set_console_output(vfs_console_putc_t putc) {

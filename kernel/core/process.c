@@ -381,6 +381,12 @@ const process_t *process_current(void) {
     return current_process;
 }
 
+const process_t *process_at(int index) {
+    if (index < 0 || index >= PROCESS_MAX) return 0;
+    if (process_table[index].state == PROCESS_UNUSED) return 0;
+    return &process_table[index];
+}
+
 int process_ipc_send(int target_pid, const piux_ipc_msg_t *message) {
     process_t *target = process_by_pid(target_pid);
     uint8_t slot;

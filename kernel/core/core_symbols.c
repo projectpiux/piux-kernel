@@ -5,8 +5,8 @@
 #include "../fs/ext2.h"
 extern ext2_filesystem_t fs;
 #include "../fs/ramfs.h"
-#include "../fs/ramfs.h"
 #include "../fs/ata.h"
+#include "../fs/procfs.h"
 #include "keyboard.h"
 #include "auth.h"
 #include "../video/video.h"
@@ -73,6 +73,7 @@ static const char *const core_symbol_names[] = {
     "process_spawn_user", "process_spawn_and_wait", "process_wait", "process_exit",
     "process_schedule", "process_ipc_send", "process_ipc_recv", "process_get_args",
     "process_enable_scheduler", "process_idle_yield", "process_pid1_alive",
+    "process_at",
 
     "net_htons", "net_htonl", "net_checksum",
     "net_parse_ip", "net_resolve_host", "net_format_ip",
@@ -85,17 +86,23 @@ static const char *const core_symbol_names[] = {
     "udp_send", "udp_last_received",
 
     "vfs_open", "vfs_read", "vfs_write", "vfs_close", "vfs_seek",
-    "vfs_node_type", "vfs_set_console_output",
+    "vfs_node_type", "vfs_set_console_output", "vfs_is_regular",
     "vfs_open_dispatch", "vfs_read_dispatch", "vfs_write_dispatch",
     "vfs_close_dispatch", "vfs_seek_dispatch", "vfs_node_type_dispatch",
+    "vfs_is_regular_dispatch",
     "vfs_console_output_dispatch", "vfs_module_ready",
+
+    "procfs_is_proc_path", "procfs_node_type", "procfs_list", "procfs_open",
+    "procfs_read", "procfs_seek", "procfs_close", "procfs_set_hook",
+    "procfs_file_path", "procfs_file_buffer",
 
     "fs",
 
     "_os_infos_start", "_os_infos_end",
 
     "http_get_to_fd", "https_get_to_fd", "elf_load",
-    "system_memory_total_kb", "system_memory_used_kb", "system_memory_free_kb"
+    "system_memory_total_kb", "system_memory_used_kb", "system_memory_free_kb",
+    "system_memory_lower_kb", "system_memory_upper_kb"
 };
 
 static const void *const core_symbol_addresses[] = {
@@ -147,7 +154,7 @@ static const void *const core_symbol_addresses[] = {
     PIUX_EXPORT(process_schedule), PIUX_EXPORT(process_ipc_send),
     PIUX_EXPORT(process_ipc_recv), PIUX_EXPORT(process_get_args),
     PIUX_EXPORT(process_enable_scheduler), PIUX_EXPORT(process_idle_yield),
-    PIUX_EXPORT(process_pid1_alive),
+    PIUX_EXPORT(process_pid1_alive), PIUX_EXPORT(process_at),
     PIUX_EXPORT(net_htons), PIUX_EXPORT(net_htonl), PIUX_EXPORT(net_checksum),
     PIUX_EXPORT(net_parse_ip), PIUX_EXPORT(net_resolve_host),
     PIUX_EXPORT(net_format_ip),
@@ -164,17 +171,23 @@ static const void *const core_symbol_addresses[] = {
     PIUX_EXPORT(udp_send), PIUX_EXPORT(udp_last_received),
     PIUX_EXPORT(vfs_open), PIUX_EXPORT(vfs_read), PIUX_EXPORT(vfs_write),
     PIUX_EXPORT(vfs_close), PIUX_EXPORT(vfs_seek), PIUX_EXPORT(vfs_node_type),
-    PIUX_EXPORT(vfs_set_console_output),
+    PIUX_EXPORT(vfs_set_console_output), PIUX_EXPORT(vfs_is_regular),
     PIUX_EXPORT(&vfs_open_dispatch), PIUX_EXPORT(&vfs_read_dispatch),
     PIUX_EXPORT(&vfs_write_dispatch), PIUX_EXPORT(&vfs_close_dispatch),
     PIUX_EXPORT(&vfs_seek_dispatch), PIUX_EXPORT(&vfs_node_type_dispatch),
+    PIUX_EXPORT(&vfs_is_regular_dispatch),
     PIUX_EXPORT(&vfs_console_output_dispatch), PIUX_EXPORT(&vfs_module_ready),
+    PIUX_EXPORT(procfs_is_proc_path), PIUX_EXPORT(procfs_node_type),
+    PIUX_EXPORT(procfs_list), PIUX_EXPORT(procfs_open), PIUX_EXPORT(procfs_read),
+    PIUX_EXPORT(procfs_seek), PIUX_EXPORT(procfs_close), PIUX_EXPORT(procfs_set_hook),
+    PIUX_EXPORT(procfs_file_path), PIUX_EXPORT(procfs_file_buffer),
     PIUX_EXPORT(&fs),
     PIUX_EXPORT(&_os_infos_start), PIUX_EXPORT(&_os_infos_end),
     PIUX_EXPORT(http_get_to_fd), PIUX_EXPORT(https_get_to_fd),
     PIUX_EXPORT(elf_load),
     PIUX_EXPORT(&system_memory_total_kb), PIUX_EXPORT(&system_memory_used_kb),
-    PIUX_EXPORT(&system_memory_free_kb)
+    PIUX_EXPORT(&system_memory_free_kb),
+    PIUX_EXPORT(&system_memory_lower_kb), PIUX_EXPORT(&system_memory_upper_kb)
 };
 
 void core_symbols_init(void) {

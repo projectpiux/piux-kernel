@@ -1,46 +1,53 @@
 #include <stdint.h>
-#include "../kernel/fs/ext2.h"
+#include "../kernel/fs/vfs.h"
 
 typedef void (*vga_puts_t)(const char *);
 typedef void (*vga_putc_t)(char);
 
-#define CAT_BUFFER_SIZE 4096
-
-extern int ext2_is_mounted(void);
-extern int ext2_find_inode_by_path(const char *path);
-extern int ext2_read_file_by_path(const char *path, char *buffer, uint32_t size);
-extern int ramfs_find_file(const char *filename);
-extern int ramfs_read_file(const char *filename, char *buffer, uint32_t max_size);
+#define CAT_BUFFER_SIZE 512
 
 static char cat_buffer[CAT_BUFFER_SIZE];
 
+/*
+ * cat is a pure VFS client: open/read/close. That makes it work on regular
+ * files, device nodes (/dev/zero, /dev/hda) and generated files (/proc/uptime),
+ * exactly the "everything is a file" contract.
+ */
 void cmd_cat(const char *filename, vga_puts_t vga_puts, vga_putc_t vga_putc) {
+    int fd;
+    int bytes = 0;
+    int total = 0;
+    int regular = 0;
+    char last = 0;
+
     if (filename == 0 || filename[0] == '\0') {
         vga_puts("usage: cat <filename>\n");
         return;
     }
 
-    int use_ext2 = ext2_is_mounted();
-    int exists = use_ext2 ? (ext2_find_inode_by_path(filename) >= 0)
-                          : (ramfs_find_file(filename) >= 0);
-
-    if (!exists) {
+    fd = vfs_open(filename, VFS_O_READ);
+    if (fd < 0) {
         vga_puts("File not found\n");
         return;
     }
+    regular = vfs_is_regular(fd);
 
-    int bytes = use_ext2 ? ext2_read_file_by_path(filename, cat_buffer, CAT_BUFFER_SIZE)
-                         : ramfs_read_file(filename, cat_buffer, CAT_BUFFER_SIZE);
-
-    if (bytes < 0) {
-        vga_puts("read error\n");
-        return;
+    for (;;) {
+        bytes = vfs_read(fd, cat_buffer, CAT_BUFFER_SIZE);
+        if (bytes < 0) {
+            vga_puts("read error\n");
+            vfs_close(fd);
+            return;
+        }
+        if (bytes == 0) break;
+        for (int i = 0; i < bytes; i++) vga_putc(cat_buffer[i]);
+        last = cat_buffer[bytes - 1];
+        total += bytes;
+        /* Character devices may never report EOF: stop on a short read. */
+        if (bytes < CAT_BUFFER_SIZE && !regular) break;
     }
-    if (bytes > CAT_BUFFER_SIZE) bytes = CAT_BUFFER_SIZE;
+    vfs_close(fd);
 
-    for (int i = 0; i < bytes; i++) vga_putc(cat_buffer[i]);
-
-    if (bytes == 0) vga_puts("(empty file)\n");
-    else if (cat_buffer[bytes - 1] != '\n') vga_putc('\n');
-
+    if (total == 0) vga_puts("(empty file)\n");
+    else if (last != '\n') vga_putc('\n');
 }

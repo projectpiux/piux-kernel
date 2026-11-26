@@ -122,7 +122,7 @@ $(MOD_DIR)/%.mod: FORCE
 	@mkdir -p $(dir $@)
 	@$(MAKE) --no-print-directory -f $(ARCH_DIR)/Makefile.mk PIUX_STAGE=$$(basename $@ .mod) _module-stage
 
-$(MOD_DIR)/vfs.mod.stage: kernel/fs/vfs.c $(wildcard kernel/*/*.h) FORCE
+$(MOD_DIR)/vfs.mod.stage: kernel/fs/vfs.c kernel/fs/procfs.c $(wildcard kernel/*/*.h)
 	@mkdir -p $(dir $@)
 	$(CC) $(MODULE_FLAGS) -DPIUX_MODULE_VFS -DPIUX_MODULE_VERSION=\"1.0.0\" \
 	  -DPIUX_MODULE_RELEASE=\"$(MODULE_CORE_RELEASE)\" $(KERNEL_INCLUDES) \
@@ -130,13 +130,16 @@ $(MOD_DIR)/vfs.mod.stage: kernel/fs/vfs.c $(wildcard kernel/*/*.h) FORCE
 	$(LD) -r -m $(ARCH_LD_TARGET) -o $(MOD_DIR)/vfs.mod $(MOD_DIR)/vfs.o
 	@touch $@
 
-$(MOD_DIR)/commands.mod.stage: $(ARCH_BUILD)/modules/commands-src.stamp FORCE
+COMMAND_SOURCES := $(filter-out bin/initctl.c,$(wildcard bin/*.c))
+
+# COMMAND_SOURCES and the kernel headers must be known before this rule is
+# declared; depending on them (instead of FORCE) makes an edited bin/*.c really
+# rebuild commands.mod, while an untouched tree still relinks for free.
+$(MOD_DIR)/commands.mod.stage: $(ARCH_BUILD)/modules/commands-src.stamp $(COMMAND_SOURCES) $(wildcard kernel/*/*.h)
 	$(LD) -r -m $(ARCH_LD_TARGET) -o $(MOD_DIR)/commands.mod $(wildcard $(MOD_DIR)/commands/*.o)
 	@touch $@
 
-COMMAND_SOURCES := $(filter-out bin/initctl.c,$(wildcard bin/*.c))
-
-$(ARCH_BUILD)/modules/commands-src.stamp: $(COMMAND_SOURCES) $(wildcard kernel/*/*.h) FORCE
+$(ARCH_BUILD)/modules/commands-src.stamp: $(COMMAND_SOURCES) $(wildcard kernel/*/*.h)
 	@mkdir -p $(MOD_DIR)/commands
 	@rm -f $(MOD_DIR)/commands/*.o
 	@for source in $(COMMAND_SOURCES); do \

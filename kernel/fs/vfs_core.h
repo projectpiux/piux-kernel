@@ -11,6 +11,7 @@ extern int (*vfs_write_dispatch)(int fd, const void *buffer, uint32_t size);
 extern int (*vfs_close_dispatch)(int fd);
 extern int (*vfs_seek_dispatch)(int fd, uint32_t offset);
 extern vfs_node_type_t (*vfs_node_type_dispatch)(const char *path);
+extern int (*vfs_is_regular_dispatch)(int fd);
 extern vfs_console_putc_t (*vfs_console_output_dispatch)(vfs_console_putc_t putc);
 
 #endif

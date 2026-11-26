@@ -1,4 +1,4 @@
-
+/* This is the main kernel file, dont touch it! */
 
 #include <stdint.h>
 #include "io.h"

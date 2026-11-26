@@ -6,6 +6,7 @@
 #define VFS_O_READ  0x01
 #define VFS_O_WRITE 0x02
 #define VFS_O_CREATE 0x04
+#define VFS_O_PROCFS 0x40000000
 
 #define VFS_FD_STDIN  0
 #define VFS_FD_STDOUT 1
@@ -29,5 +30,6 @@ int vfs_close(int fd);
 int vfs_seek(int fd, uint32_t offset);
 vfs_node_type_t vfs_node_type(const char *path);
 vfs_console_putc_t vfs_set_console_output(vfs_console_putc_t putc);
+int vfs_is_regular(int fd);
 
 #endif

@@ -6,9 +6,9 @@ void cmd_help(const char *param, vga_puts_t vga_puts, void (*vga_putc)(char)) {
     vga_puts("Available commands:\n");
     vga_puts("  help   - Show this help message\n");
     vga_puts("  about  - About Piux\n");
-    vga_puts("  ls     - List directory\n");
+    vga_puts("  ls     - List directory (also /dev and /proc)\n");
     vga_puts("  cd     - Change directory\n");
-    vga_puts("  cat    - Read file\n");
+    vga_puts("  cat    - Read any file: disk, /dev/* or /proc/*\n");
     vga_puts("  clear  - Clear screen\n");
     vga_puts("  top    - Show RAM and disk resources\n");
     vga_puts("  fs     - Show filesystem info\n");
